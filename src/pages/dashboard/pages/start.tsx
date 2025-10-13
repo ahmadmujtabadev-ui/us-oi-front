@@ -1,257 +1,310 @@
-import { useEffect, useState } from 'react';
-import { CheckCircle, Search, MoreHorizontal, Edit, Trash2, Eye } from 'lucide-react';
-import { useAppDispatch, useAppSelector } from '@/hooks/hooks'; // adjust based on your setup
-import { getDraftLOIsAsync } from '@/services/loi/asyncThunk'; // adjust path to where your thunk is located
-import { DashboardLayout } from '@/components/layouts';
-import { useRouter } from 'next/router'; // or 'next/navigation' if using app directory
+import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/router';
 import Image from 'next/image';
-import { formatDate } from '@/utils/dateFormatter';
-import { Letter, LOIStatus } from '@/types/loi';
-import { LoadingOverlay } from '@/components/loaders/overlayloader';
+import { DashboardLayout } from '@/components/layouts';
+import { ShieldCheck, Plug, Eye, EyeOff, ClipboardPaste, Info, ChevronRight } from 'lucide-react';
+// import { useAppDispatch } from '@/hooks/hooks';
+// import { createIntegrationAsync } from '@/services/integrations/asyncThunk';
 
-export default function LetterOfIntentDashboard() {
-  const [selectedLetter, setSelectedLetter] = useState<Letter | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const router = useRouter();
-  const dispatch = useAppDispatch()
-  const { loiList, isLoading } = useAppSelector((state) => state.loi);
+type Exchange = 'binance' | 'bybit' | 'bingx';
 
-  const getStatusColor = (status: LOIStatus) => {
-    switch (status) {
-      case 'Draft': return 'bg-gray-100 text-gray-800';
-      case 'Sent': return 'bg-blue-100 text-blue-800';
-      case 'Approved': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
+const EXCHANGES: { id: Exchange; name: string; logo: string }[] = [
+  { id: 'binance', name: 'Binance', logo: '/exchanges/binance.svg' },
+  { id: 'bybit', name: 'Bybit', logo: '/exchanges/bybit.svg' },
+  { id: 'bingx', name: 'BingX', logo: '/exchanges/bingx.svg' },
+];
+
+function SegmentedExchange({
+  value,
+  onChange,
+}: {
+  value: Exchange | null;
+  onChange: (val: Exchange) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {EXCHANGES.map((x) => {
+        const active = value === x.id;
+        return (
+          <button
+            key={x.id}
+            type="button"
+            onClick={() => onChange(x.id)}
+            className={[
+              'group flex items-center gap-3 rounded-xl border p-3 text-left transition',
+              active
+                ? 'border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50'
+                : 'border-slate-200 hover:bg-slate-50',
+            ].join(' ')}
+          >
+            <div className="h-6 w-6 overflow-hidden rounded">
+              <Image src={x.logo} width={24} height={24} alt={`${x.name} logo`} />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-slate-900">{x.name}</div>
+              <div className="text-xs text-slate-500">Spot / Futures supported</div>
+            </div>
+            <Plug className={active ? 'h-4 w-4 text-indigo-600' : 'h-4 w-4 text-slate-400'} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MaskedInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+  hint,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  hint?: React.ReactNode;
+}) {
+  const [show, setShow] = useState(false);
+
+  const paste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      onChange(text);
+    } catch {
+      // no-op
     }
-  }
-
-  const handleStartNewLOI = () => {
-    console.log("running")
-    router.push('/dashboard/pages/createform');
-  };
-
-  useEffect(() => {
-    dispatch(getDraftLOIsAsync());
-  }, [dispatch]);
-
-  const openDetail = (id?: string) => {
-    if (!id) return;
-    router.push(`/dashboard/pages/loi/view/${id}`);
   };
 
   return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-slate-700">
+          {label} {required && <span className="text-rose-600">*</span>}
+        </label>
+        {hint}
+      </div>
+      <div className="flex rounded-xl border border-slate-300 bg-white focus-within:ring-2 focus-within:ring-indigo-200">
+        <input
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-l-xl border-0 px-3 py-2 text-sm text-slate-900 outline-none"
+          autoComplete="off"
+        />
+        <div className="flex items-center gap-1 pr-1">
+          <button
+            type="button"
+            onClick={paste}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            title="Paste from clipboard"
+          >
+            <ClipboardPaste className="h-4 w-4" />
+            Paste
+          </button>
+          <button
+            type="button"
+            onClick={() => setShow((s) => !s)}
+            className="inline-flex items-center rounded-lg px-2 py-1 text-slate-600 hover:bg-slate-50"
+            title={show ? 'Hide' : 'Show'}
+          >
+            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AddIntegrationPage() {
+  const router = useRouter();
+  // const dispatch = useAppDispatch();
+
+  // form state
+  const [exchange, setExchange] = useState<Exchange | null>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [apiSecret, setApiSecret] = useState('');
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [label, setLabel] = useState('');
+
+  const isValid = useMemo(() => !!exchange && apiKey.trim() !== '' && apiSecret.trim() !== '', [exchange, apiKey, apiSecret]);
+
+  const onCancel = () => router.push('/connections');
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValid) return;
+    // await dispatch(createIntegrationAsync({ exchange, apiKey, apiSecret, email, username, label }));
+    router.push('/connections?created=1');
+  };
+
+  useEffect(() => {
+    // page view / analytics if needed
+  }, []);
+
+  return (
     <DashboardLayout>
-      {isLoading ? (<LoadingOverlay isVisible />) : (
-        <div className="min-h-screen">
-          <div className="max-w-9xl mx-auto px-2 sm:px-6 lg:px-p0 py-8">
-            {/* Header */}
-            <div className="bg-white p-4 rounded-lg shadow-sm mb-8">
-              <h1 className="text-3xl lg:w-[1086px] font-bold text-[24px] text-gray-900 mb-2">Start a New Letter of Intent</h1>
-              <p className="text-gray-600">Initiate the LOI process by completing the steps below or reviewing previously saved drafts.</p>
-            </div>
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 xl:gap-6">
-              {/* Left Side */}
-              <div className="xl:col-span-2 w-full">
-                <div className="bg-[#EFF6FF] rounded-lg shadow-sm p-6 h-full">
-                  <div className="flex items-center mb-6">
-                    <Image src='/loititle.png' width={50} height={40} alt="" className='mr-5' />
+      <div className="flex-1 overflow-auto">
+        {/* Header */}
+        <div className="px-4 pt-6 pb-4 sm:px-6 lg:px-8">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Add Integration</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Connect an exchange by adding an API key and secret.
+          </p>
+        </div>
 
-                    <h2 className="text-xl font-semibold text-gray-900">Start New LOI</h2>
-                  </div>
-
-                  <p className="text-gray-600 pt-5 text-[18px] pb-8">
-                    Create a new Letter of Intent using our step-by-step intake wizard. Our AI-powered platform will guide you through each section to ensure your LOI is comprehensive and professional.
-                  </p>
-
-                  <div className="flex gap-4 mb-8 flex-wrap">
-                    <button
-                      className="bg-[#3B82F6] w-[187px] text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors flex items-center"
-                      onClick={handleStartNewLOI}
-                    >
-                      Start New LOI
-                      <Image alt='arrow' src='/arrow.png' width={30} height={20} />
-                    </button>
-                  </div>
-                  <div className=" h-[1.5px] bg-[#DBEAFE] w-full my-15" />
-                  <div className="bg-[#EFF6FF] rounded-lg p-4">
-                    <h3 className="font-medium text-gray-900 mb-3">What you will get:</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {[
-                        'Professional LOI template',
-                        'AI-powered suggestions',
-                        'Save and resume anytime',
-                        'Export to PDF',
-                      ].map((text, i) => (
-                        <div className="flex items-center" key={i}>
-                          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                          <span className="text-sm text-gray-700">{text}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+        {/* Content */}
+        <form onSubmit={onSubmit} className="px-4 pb-28 sm:px-6 lg:px-8"> {/* extra bottom space for sticky footer */}
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            {/* Left: form */}
+            <div className="xl:col-span-2 space-y-6">
+              {/* Exchange */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+                <div className="mb-4">
+                  <label className="text-sm font-semibold text-slate-800">
+                    Exchange <span className="text-rose-600">*</span>
+                  </label>
                 </div>
+                <SegmentedExchange value={exchange} onChange={setExchange} />
               </div>
 
-              {/* Right Side - Four Feature Cards */}
-              <div className="flex flex-col gap-4 w-full">
-                {[
-                  {
-                    icon: '/ai-powered.png',
-                    title: 'AI-Powered Assistance',
-                    desc: 'Get intelligent suggestions and guidance throughout the process to ensure your LOI is comprehensive and professional.',
+              {/* Credentials */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 space-y-5">
+                <MaskedInput
+                  label="API Key"
+                  value={apiKey}
+                  onChange={setApiKey}
+                  required
+                  placeholder="Paste your API key"
+                  hint={
+                    <span className="flex items-center gap-1 text-xs text-slate-500">
+                      <Info className="h-3.5 w-3.5" /> Default masked
+                    </span>
+                  }
+                />
 
-                  },
-                  {
-                    icon: '/loititle.png',
-                    title: 'Step-by-Step Wizard',
-                    desc: 'Complete your LOI with our intuitive guided workflow that walks you through each required section.',
+                <MaskedInput
+                  label="API Secret"
+                  value={apiSecret}
+                  onChange={setApiSecret}
+                  required
+                  placeholder="Paste your API secret"
+                  hint={
+                    <a
+                      href="https://www.binance.com/en/support/faq"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+                      title="Learn how to generate a secret on your exchange"
+                    >
+                      Generate from exchange <ChevronRight className="h-3.5 w-3.5" />
+                    </a>
+                  }
+                />
 
-                  },
-                  {
-                    icon: '/professional.png',
-                    title: 'Professional Templates',
-                    desc: 'Use industry-standard LOI templates tailored for commercial leases and real estate transactions.',
-
-                  },
-                  {
-                    icon: '/step.png',
-                    title: 'Need Help?',
-                    desc: 'Our support team is here to assist you with any questions about the LOI process.',
-
-                    support: true,
-                  },
-                ].map((item, idx) => (
-                  <div
-                    key={idx}
-                    className={`bg-white rounded-xl shadow-sm px-4 py-5 ${item.support ? 'min-h-[150px]' : 'min-h-[130px]'
-                      }`}
-                  >
-                    <div className="flex items-start gap-3 mb-2">
-                      <Image src={item.icon} width={40} height={30} alt="" />
-                      <h3 className="text-base font-semibold text-gray-900">{item.title}</h3>
-                    </div>
-                    <p className="text-gray-700 text-sm mb-3 leading-snug">{item.desc}</p>
-                    {item.support && (
-                      <button className="bg-gray-50 font-semibold text-black h-9 w-full px-4 py-1 rounded-lg text-sm hover:bg-gray-100 transition-colors">
-                        Contact Support
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-            </div>
-
-            {/* My Draft LOIs Section */}
-            <div className="bg-white rounded-lg shadow-sm mt-8">
-              <div className="border-b border-gray-200 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">My Draft LOIs</h2>
-
-                {/* Search and Filter */}
-                <div className="flex flex-col sm:flex-row gap-4 mb-4">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                {/* Optional fields */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-700">Email (optional)</label>
                     <input
-                      type="text"
-                      placeholder="Search drafts..."
-                      className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-700">Username (optional)</label>
+                    <input
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="exchange username"
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Table Scroll Wrapper */}
-              <div className="overflow-x-auto">
-                <div className="min-w-[800px]">
-                  {/* Table Header */}
-                  <div className="px-4 sm:px-6 md:px-8 lg:px-12 py-3 bg-gray-50 border-b border-gray-200">
-                    <div className="grid grid-cols-12 gap-0 text-xs font-semibold text-black-500 uppercase tracking-wide">
-                      <div className="col-span-3">LOI Title</div>
-                      <div className="col-span-3">Property Address</div>
-                      <div className="col-span-2">Last Edited</div>
-                      <div className="col-span-2">Status</div>
-                      <div className="col-span-1">Actions</div>
-                    </div>
-                  </div>
-
-                  {/* Table Rows */}
-                  <div className="divide-y divide-gray-200">
-                    {loiList?.my_loi?.map((letter: Letter) => (
-                      <div key={letter?.id} className="px-4 sm:px-6 md:px-8 lg:px-12 py-4 hover:bg-gray-50">
-                        <div className="grid grid-cols-12 gap-1 items-center">
-                          <div className="col-span-3">
-                            <div className="flex items-center">
-                              <Image
-                                src="/loititle.png"
-                                alt="Upload Document"
-                                width={24}
-                                height={24}
-                                className="w-10 h-10 mr-3" // ← Added margin-right
-                              />
-                              <div className="text-sm font-medium text-gray-900">
-                                {letter?.title}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="col-span-3">
-                            <div className="text-sm text-gray-500">{letter?.propertyAddress}</div>
-                          </div>
-                          <div className="col-span-2">
-                            <div className="text-sm text-gray-500">
-                              {letter?.updated_at && formatDate(letter.updated_at)}
-                            </div>                        </div>
-                          <div className="col-span-2">
-                            <span
-                              className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(
-                                letter?.submit_status
-                              )}`}
-                            >
-                              {letter?.submit_status}
-                            </span>
-                          </div>
-
-                          <div className="col-span-1">
-                            <div className="flex items-center space-x-1">
-                              <button
-                                className="p-1 hover:bg-gray-100 rounded"
-                                onClick={() => {
-                                  setSelectedLetter(letter);
-                                  setIsModalOpen(true);
-                                }}
-                              >
-                                <Eye className="w-4 h-4 text-gray-500"
-                                  onClick={() => openDetail(letter.id)}
-                                />
-                              </button>
-
-                              <button className="p-1 hover:bg-gray-100 rounded"
-                                onClick={() => router.push(`/dashboard/pages/loi/edit/${letter?.id}`)}
-                              >
-                                <Edit className="w-4 h-4 text-gray-500" />
-                              </button>
-                              <button className="p-1 hover:bg-gray-100 rounded">
-                                <Trash2 className="w-4 h-4 text-gray-500" />
-                              </button>
-                              <button className="p-1 hover:bg-gray-100 rounded">
-                                <MoreHorizontal className="w-4 h-4 text-gray-500" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">
+                    Label (optional short name)
+                  </label>
+                  <input
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                    placeholder="e.g., Main Binance"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  />
                 </div>
               </div>
             </div>
 
+            {/* Right: sticky checklist */}
+            <div className="xl:col-span-1">
+              <div className="xl:sticky xl:top-24 space-y-6">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+                  <h3 className="mb-3 text-sm font-semibold text-slate-800">Connection Checklist</h3>
+                  <ul className="space-y-3 text-sm text-slate-700">
+                    <li className="flex items-start gap-2">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-indigo-500"></span>
+                      Create <b>read/trade</b> key in your exchange
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                      Restrict IPs <span className="text-slate-500">(recommended)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-rose-500"></span>
+                      Disable withdrawals
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-emerald-50 p-5 sm:p-6">
+                  <div className="mb-2 flex items-center gap-2 text-emerald-800">
+                    <ShieldCheck className="h-5 w-5" />
+                    <h4 className="text-sm font-semibold">Security Tips</h4>
+                  </div>
+                  <ul className="list-disc pl-5 text-sm text-emerald-900">
+                    <li>We encrypt your secrets at rest.</li>
+                    <li>We never display your full secret again after saving.</li>
+                    <li>Rotate keys periodically and revoke unused ones.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
 
-      )}
-
-    </DashboardLayout >
+          {/* Sticky footer */}
+          <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 backdrop-blur">
+            <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!isValid}
+                  className={[
+                    'inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-white',
+                    isValid ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-400 cursor-not-allowed',
+                  ].join(' ')}
+                >
+                  Connect
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </DashboardLayout>
   );
 }
+  
