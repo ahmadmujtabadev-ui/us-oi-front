@@ -49,9 +49,8 @@ export default function ConnectionsPage() {
 const list = useMemo(
   () =>
     rows.filter(r =>
-      (r.label + EXCHANGE_META[r.exchange].name)
-        .toLowerCase()
-        .includes(q.toLowerCase())
+      (r?.label + EXCHANGE_META[r.exchange]?.name)
+    
     ),
   [rows, q]
 );

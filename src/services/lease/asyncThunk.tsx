@@ -4,7 +4,7 @@
 
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import ls from "localstorage-slim";
-import { HttpService } from "../index"; 
+import { HttpService } from "../index";
 import Toast from "@/components/Toast";
 import { connectionService } from "./endpoint";
 
@@ -125,8 +125,11 @@ export const resumeConnectionAsync = createAsyncThunk(
 export const syncConnectionAsync = createAsyncThunk(
   "connections/sync",
   async (id: string, { rejectWithValue }) => {
+    console.log("running", id)
     try {
       const response = await connectionService.syncConnection(id);
+      console.log("response", response.data)
+
       return response.data;
     } catch (error: any) {
       return rejectWithValue(

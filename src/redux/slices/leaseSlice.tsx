@@ -2,6 +2,7 @@ import Toast from "@/components/Toast";
 import { bulkPauseConnectionsAsync, bulkRemoveConnectionsAsync, bulkResumeConnectionsAsync, createConnectionAsync, fetchConnectionsAsync, pauseConnectionAsync, removeConnectionAsync, resumeConnectionAsync, syncConnectionAsync } from "@/services/lease/asyncThunk";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { RootState } from "../store";
+const asArray = (v: any): ConnectionModel[] => (Array.isArray(v) ? v : v?.items ?? []);
 
 
 export type Exchange = "binance" | "bybit" | "bingx";
@@ -58,18 +59,24 @@ export const connectionSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
+    // LIST
     builder
       .addCase(fetchConnectionsAsync.pending, (state) => {
         state.isLoading = true;
         state.error = "";
       })
-      .addCase(fetchConnectionsAsync.fulfilled, (state, action: PayloadAction<ConnectionModel[]>) => {
-        state.isLoading = false;
-        state.items = action.payload;
-      })
+      .addCase(
+        fetchConnectionsAsync.fulfilled,
+        (state, action: PayloadAction<ConnectionModel[] | { items: ConnectionModel[] }>) => {
+          state.isLoading = false;
+          const payload = action.payload as any;
+          state.items = Array.isArray(payload) ? payload : payload?.items ?? []; // <-- always array
+          // optional: if you keep pagination in this slice, also copy page/limit/total from payload
+        }
+      )
       .addCase(fetchConnectionsAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = (action.payload as string) ?? "Failed to load credentials";
+        state.error = (action.payload as string) ?? "Failed to load connections";
       });
 
     builder
@@ -96,6 +103,8 @@ export const connectionSlice = createSlice({
         Toast.fire({ icon: "error", title: state.error });
       });
 
+
+    // PAUSE
     builder
       .addCase(pauseConnectionAsync.pending, (state) => {
         state.isLoading = true;
@@ -105,18 +114,18 @@ export const connectionSlice = createSlice({
         pauseConnectionAsync.fulfilled,
         (state, action: PayloadAction<{ id: string; status: Status }>) => {
           state.isLoading = false;
-          const index = state.items.findIndex((item) => item.id === action.payload.id);
-          if (index !== -1) {
-            state.items[index].status = action.payload.status;
-          }
+          const arr = asArray(state.items);
+          const i = arr.findIndex((it) => it.id === action.payload.id);
+          if (i >= 0) arr[i].status = action.payload.status;
+          state.items = arr; // keep it as array
           Toast.fire({ icon: "success", title: "Connection paused" });
         }
       )
       .addCase(pauseConnectionAsync.rejected, (state, action) => {
         state.isLoading = false;
         state.error = (action.payload as string) ?? "Failed to pause connection";
-        Toast.fire({ icon: "error", title: state.error });
       });
+
 
     builder
       .addCase(resumeConnectionAsync.pending, (state) => {
@@ -126,12 +135,11 @@ export const connectionSlice = createSlice({
       .addCase(
         resumeConnectionAsync.fulfilled,
         (state, action: PayloadAction<{ id: string; status: Status }>) => {
+          const arr = asArray(state.items);
+          const i = arr.findIndex((it) => it.id === action.payload.id);
+          if (i >= 0) arr[i].status = action.payload.status;
+          state.items = arr;
           state.isLoading = false;
-          const index = state.items.findIndex((item) => item.id === action.payload.id);
-          if (index !== -1) {
-            state.items[index].status = action.payload.status;
-          }
-          Toast.fire({ icon: "success", title: "Connection resumed" });
         }
       )
       .addCase(resumeConnectionAsync.rejected, (state, action) => {
