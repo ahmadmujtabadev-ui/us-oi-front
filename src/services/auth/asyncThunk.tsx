@@ -1,117 +1,105 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import { authBaseService } from "./endpoints"; // Import your authService
-import { HttpService } from "../index";
-import ls from "localstorage-slim";
+import { authBaseService, LoginDto, RegisterDto, ForgotPasswordDto } from "./endpoints";
 
-interface LoginUserData {
+export type BackendRole = "user" | "tenant" | "landlord" | "admin";
+
+export interface BackendUser {
+  id: string;
   email: string;
-  password: string;
-  // add other properties as needed
+  businessName?: string;
+  role: BackendRole | string;
+  emailVerified?: boolean;
+  twoFactorEnabled?: boolean;
+  lastLoginAt?: string;
 }
 
-interface UserData {
-  id?: string;
-  firstName: string;
-  lastName: string;
-  fullName?: string;
-  email: string;
-  password: string;
-  confirmPassword: string;
-  role: string;
-  isVerified?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+export interface LoginResponse {
+  user: BackendUser;
+  accessToken: string;
 }
 
-interface ResetPasswordData {
-  email: string;
+export interface RegisterResponse {
+  user: BackendUser;
+  accessToken?: string;
 }
 
+export interface MeResponse extends BackendUser {}
 
-export const userSignUpAsync = createAsyncThunk(
-  "/auth/sign-Up",
-  async (data : UserData, { rejectWithValue }) => {
-    try {
-      const response = await authBaseService.signUp(data);
-      console.log("response 26",response)
-      // console.log("response.data[0].success", response.sucess[0].success)
+export interface GenericResponse {
+  message: string;
+  success?: boolean;
+}
 
-      // Additional check for API-level errors
-      if (response.success == false && response.status == 400) {
-        return rejectWithValue(response.message);
-      }
+type Reject = string;
 
-      return response.data;
-    } catch (error: any) {
-      // Handle different error scenarios
-      if (error.response?.message) {
-        return rejectWithValue(error.response.message);
-      } else if (error.message) {
-        return rejectWithValue(error.message);
-      } else {
-        return rejectWithValue('An unexpected error occurred');
-      }
-    }
-  }
-);
-
-export const userSignInAsync = createAsyncThunk(
-  "/auth/sign-in",
-  async (data : LoginUserData, { rejectWithValue }) => {
-    try {
-      const response = await authBaseService.signIn(data);
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response.data.message);
-    }
-  }
-);
-
-export const socialSignInAsync = createAsyncThunk(
-  "auth/social-sign-in",
+export const userSignUpAsync = createAsyncThunk<RegisterResponse, RegisterDto, { rejectValue: Reject }>(
+  "auth/register",
   async (data, { rejectWithValue }) => {
     try {
-      const response = await authBaseService.socialSignIn(data);
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response.data.message);
+      const res = await authBaseService.register(data);
+      return res.data as RegisterResponse;
+    } catch (e: any) {
+      return rejectWithValue(e?.response?.data?.message ?? e?.message ?? "Registration failed");
     }
   }
 );
 
-export const userForgetRequestAsync = createAsyncThunk(
-  "/auth/request-otp",
+export const userSignInAsync = createAsyncThunk<LoginResponse, LoginDto, { rejectValue: Reject }>(
+  "auth/login",
   async (data, { rejectWithValue }) => {
     try {
-      const response = await authBaseService.forgetPassword(data);
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response.data.message);
+      const res = await authBaseService.login(data);
+      return res.data as LoginResponse;
+    } catch (e: any) {
+      return rejectWithValue(e?.response?.data?.message ?? e?.message ?? "Login failed");
     }
   }
 );
 
-export const userVerifyOTPAsync = createAsyncThunk(
-  "/auth/verify-otp",
+export const socialSignInAsync = createAsyncThunk<any, any, { rejectValue: Reject }>(
+  "auth/social-login",
   async (data, { rejectWithValue }) => {
     try {
-      const response = await authBaseService.verifyOTP(data);
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response.data.message);
+      const res = await authBaseService.googleLogin(data);
+      return res.data;
+    } catch (e: any) {
+      return rejectWithValue(e?.response?.data?.message ?? e?.message ?? "Social login failed");
     }
   }
 );
 
-export const userResetPasswordAsync = createAsyncThunk(
-  "/auth/change-password",
-  async (data: ResetPasswordData, { rejectWithValue }) => {
+export const userForgetRequestAsync = createAsyncThunk<GenericResponse, ForgotPasswordDto, { rejectValue: Reject }>(
+  "auth/forgot-password",
+  async (data, { rejectWithValue }) => {
     try {
-      const response = await authBaseService.resetPassword(data);
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response.data.message);
+      const res = await authBaseService.forgotPassword(data);
+      return res.data as GenericResponse;
+    } catch (e: any) {
+      return rejectWithValue(e?.response?.data?.message ?? e?.message ?? "Request failed");
+    }
+  }
+);
+
+export const userVerifyOTPAsync = createAsyncThunk<GenericResponse, any, { rejectValue: Reject }>(
+  "auth/verify-otp",
+  async (data, { rejectWithValue }) => {
+    try {
+      const res = await authBaseService.verifyOTP(data);
+      return res.data as GenericResponse;
+    } catch (e: any) {
+      return rejectWithValue(e?.response?.data?.message ?? e?.message ?? "Verification failed");
+    }
+  }
+);
+
+export const userResetPasswordAsync = createAsyncThunk<GenericResponse, any, { rejectValue: Reject }>(
+  "auth/reset-password",
+  async (data, { rejectWithValue }) => {
+    try {
+      const res = await authBaseService.resetPassword(data);
+      return res.data as GenericResponse;
+    } catch (e: any) {
+      return rejectWithValue(e?.response?.data?.message ?? e?.message ?? "Reset failed");
     }
   }
 );

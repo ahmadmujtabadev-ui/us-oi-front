@@ -3,8 +3,8 @@ import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { DashboardLayout } from '@/components/layouts';
 import { ShieldCheck, Plug, Eye, EyeOff, ClipboardPaste, Info, ChevronRight } from 'lucide-react';
-// import { useAppDispatch } from '@/hooks/hooks';
-// import { createIntegrationAsync } from '@/services/integrations/asyncThunk';
+import { useAppDispatch } from '@/hooks/hooks';
+import { saveLeasesAsync } from '@/services/loi/asyncThunk';
 
 type Exchange = 'binance' | 'bybit' | 'bingx';
 
@@ -121,7 +121,7 @@ function MaskedInput({
 
 export default function AddIntegrationPage() {
   const router = useRouter();
-  // const dispatch = useAppDispatch();
+  const dispatch = useAppDispatch();
 
   // form state
   const [exchange, setExchange] = useState<Exchange | null>(null);
@@ -130,20 +130,40 @@ export default function AddIntegrationPage() {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [label, setLabel] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isValid = useMemo(() => !!exchange && apiKey.trim() !== '' && apiSecret.trim() !== '', [exchange, apiKey, apiSecret]);
 
   const onCancel = () => router.push('/connections');
+  
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValid) return;
-    // await dispatch(createIntegrationAsync({ exchange, apiKey, apiSecret, email, username, label }));
-    router.push('/connections?created=1');
-  };
+    if (!isValid || isSubmitting) return;
 
-  useEffect(() => {
-    // page view / analytics if needed
-  }, []);
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const payload = {
+        exchange: exchange!,
+        apiKey: apiKey.trim(),
+        apiSecret: apiSecret.trim(),
+        email: email.trim() || undefined,
+        username: username.trim() || undefined,
+        label: label.trim() || undefined,
+      };
+
+     await dispatch(saveLeasesAsync(payload)).unwrap();
+      
+      // Success - redirect with success indicator
+      router.push('/dashboard/pages/credientials');
+    } catch (err: any) {
+      // Handle error
+      setError(err?.message || 'Failed to save integration. Please try again.');
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -157,7 +177,14 @@ export default function AddIntegrationPage() {
         </div>
 
         {/* Content */}
-        <form onSubmit={onSubmit} className="px-4 pb-28 sm:px-6 lg:px-8"> {/* extra bottom space for sticky footer */}
+        <form onSubmit={onSubmit} className="px-4 pb-28 sm:px-6 lg:px-8">
+          {/* Error message */}
+          {error && (
+            <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4">
+              <p className="text-sm text-rose-800">{error}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             {/* Left: form */}
             <div className="xl:col-span-2 space-y-6">
@@ -285,19 +312,20 @@ export default function AddIntegrationPage() {
                 <button
                   type="button"
                   onClick={onCancel}
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  disabled={isSubmitting}
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={!isValid}
+                  disabled={!isValid || isSubmitting}
                   className={[
                     'inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-white',
-                    isValid ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-400 cursor-not-allowed',
+                    isValid && !isSubmitting ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-400 cursor-not-allowed',
                   ].join(' ')}
                 >
-                  Connect
+                  {isSubmitting ? 'Connecting...' : 'Connect'}
                 </button>
               </div>
             </div>
@@ -307,4 +335,3 @@ export default function AddIntegrationPage() {
     </DashboardLayout>
   );
 }
-  

@@ -1,112 +1,320 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { createSlice } from "@reduxjs/toolkit";
 import Toast from "@/components/Toast";
-import { uploadLeaseAsync, getUserLeasesAsync, getClauseDetailsAsync, getLeaseDetailsById } from "@/services/lease/asyncThunk";
-import { getLOIDetailsById } from "@/services/loi/asyncThunk";
+import { bulkPauseConnectionsAsync, bulkRemoveConnectionsAsync, bulkResumeConnectionsAsync, createConnectionAsync, fetchConnectionsAsync, pauseConnectionAsync, removeConnectionAsync, resumeConnectionAsync, syncConnectionAsync } from "@/services/lease/asyncThunk";
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { RootState } from "../store";
 
-export const leaseSlice = createSlice({
-  name: "lease",
-  initialState: {
-    isLoading: false,
-    submitSuccess: false,
-    updateSuccess: false,
-    deleteSuccess: false,
-    leaseError: "",
-    currentLease: {
-      userId: "",
-      name: "",
-      docType: "application/pdf",
-      url: "",
-      lease_title: "",
-      startDate: null,
-      endDate: null,
-      property_address: "",
-      notes: "",
-      type: "lease",
-      status: "",
-      action: "",
-      risk: "",
-      comments: "",
-      clauses: {},
-    },
-    leaseList: [],
-    metaData: {},
-    filters: {},
-    loadMore: false,
+
+export type Exchange = "binance" | "bybit" | "bingx";
+export type Status = "connected" | "verifying" | "failed" | "paused";
+export type Scope = "read" | "trade";
+
+export interface ConnectionModel {
+  id: string;
+  exchange: Exchange;
+  label: string;
+  account?: string;
+  status: Status;
+  lastSyncAt?: string;
+  scope: Scope;
+  fingerprint: string;
+  createdAt: string;
+  lastError?: string;
+}
+
+export interface ConnectionState {
+  isLoading: boolean;
+  error: string;
+  items: ConnectionModel[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+  };
+  lastCreated?: ConnectionModel;
+}
+
+const initialState: ConnectionState = {
+  isLoading: false,
+  error: "",
+  items: [],
+  pagination: {
+    page: 1,
+    limit: 20,
+    total: 0,
   },
+  lastCreated: undefined,
+};
+
+export const connectionSlice = createSlice({
+  name: "connections",
+  initialState,
   reducers: {
-    setLoading: (state, action) => {
-      state.isLoading = action.payload;
+    clearError: (state) => {
+      state.error = "";
     },
-    setError: (state, action) => {
-      state.leaseError = action.payload;
-    }
+    resetConnections: (state) => {
+      state.items = [];
+      state.pagination = initialState.pagination;
+    },
   },
   extraReducers: (builder) => {
+    // ============================================
+    // FETCH CONNECTIONS
+    // ============================================
     builder
-      .addCase(uploadLeaseAsync.pending, (state) => {
+      .addCase(fetchConnectionsAsync.pending, (state) => {
         state.isLoading = true;
-        state.leaseError = "";
+        state.error = "";
       })
-      .addCase(uploadLeaseAsync.fulfilled, (state) => {
+      .addCase(
+        fetchConnectionsAsync.fulfilled,
+        (
+          state,
+          action: PayloadAction<{
+            items: ConnectionModel[];
+            page: number;
+            limit: number;
+            total: number;
+          }>
+        ) => {
+          state.isLoading = false;
+          state.items = action.payload.items;
+          state.pagination = {
+            page: action.payload.page,
+            limit: action.payload.limit,
+            total: action.payload.total,
+          };
+        }
+      )
+      .addCase(fetchConnectionsAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.submitSuccess = true;
-        Toast.fire({ icon: "success", title: "Lease uploaded successfully!" });
-
-      })
-      .addCase(uploadLeaseAsync.rejected, (state, action) => {
-        state.isLoading = false;
-        state.leaseError = action.payload;
-
-        Toast.fire({ icon: "error", title: action.payload });
-
-      })
-      .addCase(getUserLeasesAsync.pending, (state) => {
-        state.isLoading = true;
-        state.leaseError = "";
-      })
-      .addCase(getUserLeasesAsync.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.leaseList = action.payload;
-      })
-      .addCase(getUserLeasesAsync.rejected, (state, action) => {
-        state.isLoading = false;
-        state.leaseError = "";
-      })
-    builder
-      .addCase(getClauseDetailsAsync.pending, (state) => {
-        state.isLoading = true;
-        state.leaseError = null;
-      })
-      .addCase(getClauseDetailsAsync.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.currentLease = action.payload;
-      })
-      .addCase(getClauseDetailsAsync.rejected, (state, action) => {
-        state.isLoading = false;
-        state.leaseError = action.payload as string;
+        state.error = (action.payload as string) ?? "Failed to fetch connections";
+        Toast.fire({ icon: "error", title: state.error });
       });
+
+    // ============================================
+    // CREATE CONNECTION
+    // ============================================
     builder
-      .addCase(getLeaseDetailsById.pending, (state) => {
+      .addCase(createConnectionAsync.pending, (state) => {
         state.isLoading = true;
-        state.leaseError = null;
+        state.error = "";
       })
-      .addCase(getLeaseDetailsById.fulfilled, (state, action) => {
+      .addCase(
+        createConnectionAsync.fulfilled,
+        (state, action: PayloadAction<ConnectionModel>) => {
+          state.isLoading = false;
+          state.lastCreated = action.payload;
+          state.items.unshift(action.payload);
+          state.pagination.total += 1;
+          Toast.fire({ icon: "success", title: "Connection created successfully" });
+        }
+      )
+      .addCase(createConnectionAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.currentLease = action.payload;
+        state.error = (action.payload as string) ?? "Failed to create connection";
+        Toast.fire({ icon: "error", title: state.error });
+      });
+
+    // ============================================
+    // PAUSE CONNECTION
+    // ============================================
+    builder
+      .addCase(pauseConnectionAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = "";
       })
-      .addCase(getLeaseDetailsById.rejected, (state, action) => {
+      .addCase(
+        pauseConnectionAsync.fulfilled,
+        (state, action: PayloadAction<{ id: string; status: Status }>) => {
+          state.isLoading = false;
+          const index = state.items.findIndex((item) => item.id === action.payload.id);
+          if (index !== -1) {
+            state.items[index].status = action.payload.status;
+          }
+          Toast.fire({ icon: "success", title: "Connection paused" });
+        }
+      )
+      .addCase(pauseConnectionAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.leaseError = action.payload as string;
+        state.error = (action.payload as string) ?? "Failed to pause connection";
+        Toast.fire({ icon: "error", title: state.error });
+      });
+
+    // ============================================
+    // RESUME CONNECTION
+    // ============================================
+    builder
+      .addCase(resumeConnectionAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = "";
+      })
+      .addCase(
+        resumeConnectionAsync.fulfilled,
+        (state, action: PayloadAction<{ id: string; status: Status }>) => {
+          state.isLoading = false;
+          const index = state.items.findIndex((item) => item.id === action.payload.id);
+          if (index !== -1) {
+            state.items[index].status = action.payload.status;
+          }
+          Toast.fire({ icon: "success", title: "Connection resumed" });
+        }
+      )
+      .addCase(resumeConnectionAsync.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = (action.payload as string) ?? "Failed to resume connection";
+        Toast.fire({ icon: "error", title: state.error });
+      });
+
+    // ============================================
+    // SYNC CONNECTION
+    // ============================================
+    builder
+      .addCase(syncConnectionAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = "";
+      })
+      .addCase(
+        syncConnectionAsync.fulfilled,
+        (
+          state,
+          action: PayloadAction<{ id: string; lastSyncAt: string; status: Status }>
+        ) => {
+          state.isLoading = false;
+          const index = state.items.findIndex((item) => item.id === action.payload.id);
+          if (index !== -1) {
+            state.items[index].lastSyncAt = action.payload.lastSyncAt;
+            state.items[index].status = action.payload.status;
+          }
+          Toast.fire({ icon: "success", title: "Connection synced" });
+        }
+      )
+      .addCase(syncConnectionAsync.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = (action.payload as string) ?? "Failed to sync connection";
+        Toast.fire({ icon: "error", title: state.error });
+      });
+
+    // ============================================
+    // REMOVE CONNECTION
+    // ============================================
+    builder
+      .addCase(removeConnectionAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = "";
+      })
+      .addCase(
+        removeConnectionAsync.fulfilled,
+        (state, action: PayloadAction<{ id: string }>) => {
+          state.isLoading = false;
+          state.items = state.items.filter((item) => item.id !== action.payload.id);
+          state.pagination.total -= 1;
+          Toast.fire({ icon: "success", title: "Connection removed" });
+        }
+      )
+      .addCase(removeConnectionAsync.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = (action.payload as string) ?? "Failed to remove connection";
+        Toast.fire({ icon: "error", title: state.error });
+      });
+
+    // ============================================
+    // BULK PAUSE
+    // ============================================
+    builder
+      .addCase(bulkPauseConnectionsAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = "";
+      })
+      .addCase(
+        bulkPauseConnectionsAsync.fulfilled,
+        (state, action: PayloadAction<{ ids: string[] }>) => {
+          state.isLoading = false;
+          action.payload.ids.forEach((id) => {
+            const index = state.items.findIndex((item) => item.id === id);
+            if (index !== -1) {
+              state.items[index].status = "paused";
+            }
+          });
+          Toast.fire({
+            icon: "success",
+            title: `${action.payload.ids.length} connections paused`,
+          });
+        }
+      )
+      .addCase(bulkPauseConnectionsAsync.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = (action.payload as string) ?? "Failed to pause connections";
+        Toast.fire({ icon: "error", title: state.error });
+      });
+
+    // ============================================
+    // BULK RESUME
+    // ============================================
+    builder
+      .addCase(bulkResumeConnectionsAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = "";
+      })
+      .addCase(
+        bulkResumeConnectionsAsync.fulfilled,
+        (state, action: PayloadAction<{ ids: string[] }>) => {
+          state.isLoading = false;
+          action.payload.ids.forEach((id) => {
+            const index = state.items.findIndex((item) => item.id === id);
+            if (index !== -1) {
+              state.items[index].status = "connected";
+            }
+          });
+          Toast.fire({
+            icon: "success",
+            title: `${action.payload.ids.length} connections resumed`,
+          });
+        }
+      )
+      .addCase(bulkResumeConnectionsAsync.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = (action.payload as string) ?? "Failed to resume connections";
+        Toast.fire({ icon: "error", title: state.error });
+      });
+
+    // ============================================
+    // BULK REMOVE
+    // ============================================
+    builder
+      .addCase(bulkRemoveConnectionsAsync.pending, (state) => {
+        state.isLoading = true;
+        state.error = "";
+      })
+      .addCase(
+        bulkRemoveConnectionsAsync.fulfilled,
+        (state, action: PayloadAction<{ ids: string[] }>) => {
+          state.isLoading = false;
+          state.items = state.items.filter(
+            (item) => !action.payload.ids.includes(item.id)
+          );
+          state.pagination.total -= action.payload.ids.length;
+          Toast.fire({
+            icon: "success",
+            title: `${action.payload.ids.length} connections removed`,
+          });
+        }
+      )
+      .addCase(bulkRemoveConnectionsAsync.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = (action.payload as string) ?? "Failed to remove connections";
+        Toast.fire({ icon: "error", title: state.error });
       });
   },
 });
 
-export const {
-  setLoading,
-  setError,
-} = leaseSlice.actions;
+// ============================================
+// ACTIONS & SELECTORS
+// ============================================
 
-export const selectLease = (state: any) => state.lease;
+// export const { clearError, resetConnections } = connectionSlice.actions;
 
-export default leaseSlice.reducer;
+
+export default connectionSlice.reducer;
+
+export const selectCredentials = (s: RootState) => s.lease ;

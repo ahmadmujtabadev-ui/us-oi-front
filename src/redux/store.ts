@@ -1,15 +1,15 @@
 import { configureStore } from '@reduxjs/toolkit';
 import userReducer from './slices/userSlice';
-import loiReducer from './slices/loiSlice';
-import leaseReducer from './slices/leaseSlice';
+import credientialReducer from './slices/credientialSlice';
+import connectionReducer from './slices/leaseSlice';
 import dashbordReducer from './slices/dashboardSlice';
 
 
 export const store = configureStore({
   reducer: {
     user: userReducer,
-    loi: loiReducer,
-    lease: leaseReducer,
+    credential: credientialReducer,
+    lease: connectionReducer,
     dashboard : dashbordReducer,
   },
 });

@@ -1,11 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { JSX, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   Plus, UploadCloud, Search as SearchIcon, Filter, ChevronDown, Copy, Eye, RotateCw,
-  Shield, Trash2, X, Check, ChevronRight, AlertTriangle, MoreHorizontal
+  Shield, Trash2, X, ChevronRight, AlertTriangle, MoreHorizontal
 } from 'lucide-react';
 import { useRouter } from 'next/router';
 import { DashboardLayout } from '@/components/layouts';
+import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
+import { deleteCredentialAsync, fetchCredentialsAsync, revokeCredentialAsync, rotateCredentialAsync } from '@/services/loi/asyncThunk';
+import { CredentialModel } from '@/redux/slices/credientialSlice';
+import Toast from '@/components/Toast';
 
 // --- Types ---
 type Exchange = 'binance' | 'bybit' | 'bingx';
@@ -15,23 +19,23 @@ interface Credential {
   id: string;
   exchange: Exchange;
   label: string;
-  apiKeyLast4: string;          // last-4 only
-  fingerprint: string;          // e.g., "73:af:1b"
+  apiKeyLast4: string;
+  fingerprint: string;
   ownerEmail?: string;
   ownerUsername?: string;
   status: Status;
-  createdAt: string;            // ISO
-  lastUsedAt?: string;          // ISO
+  createdAt: string;
+  lastUsedAt?: string;
   notes?: string;
   connections?: { id: string; name: string; status: 'connected' | 'paused' }[];
   audit?: { at: string; event: string }[];
 }
 
-// --- Logos (replace with real paths) ---
+// --- Logos ---
 const EXCHANGE_META: Record<Exchange, { name: string; logo: string }> = {
   binance: { name: 'Binance', logo: '/exchanges/binance.svg' },
-  bybit:   { name: 'Bybit',   logo: '/exchanges/bybit.svg' },
-  bingx:   { name: 'BingX',   logo: '/exchanges/bingx.svg' },
+  bybit: { name: 'Bybit', logo: '/exchanges/bybit.svg' },
+  bingx: { name: 'BingX', logo: '/exchanges/bingx.svg' },
 };
 
 // --- Utilities ---
@@ -52,64 +56,15 @@ const relativeTime = (iso?: string) => {
   return rtf.format(days, 'day');
 };
 
-// --- Mock Data ---
-const MOCK: Credential[] = [
-  {
-    id: 'cred_1',
-    exchange: 'binance',
-    label: 'Main Binance',
-    apiKeyLast4: '9F2A',
-    fingerprint: '73:af:1b',
-    ownerEmail: 'john@example.com',
-    ownerUsername: 'johnny',
-    status: 'active',
-    createdAt: new Date(Date.now() - 40 * 24 * 3600 * 1000).toISOString(),
-    lastUsedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-    notes: 'Primary trading key',
-    connections: [{ id: 'c1', name: 'Desk A', status: 'connected' }],
-    audit: [
-      { at: new Date(Date.now() - 39 * 24 * 3600 * 1000).toISOString(), event: 'Created' },
-      { at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), event: 'Used for sync' },
-    ],
-  },
-  {
-    id: 'cred_2',
-    exchange: 'bybit',
-    label: 'Read Only',
-    apiKeyLast4: '1C3D',
-    fingerprint: '9c:44:ee',
-    status: 'active',
-    createdAt: new Date(Date.now() - 150 * 24 * 3600 * 1000).toISOString(),
-    lastUsedAt: new Date(Date.now() - 120 * 24 * 3600 * 1000).toISOString(),
-    connections: [],
-    audit: [{ at: new Date(Date.now() - 150 * 24 * 3600 * 1000).toISOString(), event: 'Created' }],
-  },
-  {
-    id: 'cred_3',
-    exchange: 'bingx',
-    label: 'Old Key',
-    apiKeyLast4: '00AB',
-    fingerprint: 'ad:3b:10',
-    status: 'revoked',
-    createdAt: new Date(Date.now() - 300 * 24 * 3600 * 1000).toISOString(),
-    lastUsedAt: new Date(Date.now() - 200 * 24 * 3600 * 1000).toISOString(),
-    notes: 'Deprecated',
-    audit: [
-      { at: new Date(Date.now() - 300 * 24 * 3600 * 1000).toISOString(), event: 'Created' },
-      { at: new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString(), event: 'Revoked' },
-    ],
-  },
-];
-
 // --- Tiny Components ---
-function Badge({ children, tone = 'slate' }: { children: React.ReactNode; tone?: 'slate' | 'emerald' | 'rose' }) {
+const Badge = React.memo(function Badge({ children, tone = 'slate' }: { children: React.ReactNode; tone?: 'slate' | 'emerald' | 'rose' }) {
   const map = {
     slate: 'bg-slate-50 text-slate-700 ring-slate-200',
     emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     rose: 'bg-rose-50 text-rose-700 ring-rose-200',
   } as const;
   return <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1', map[tone])}>{children}</span>;
-}
+});
 
 function MultiSelect<T extends string>({
   label, options, values, setValues,
@@ -149,35 +104,88 @@ function MultiSelect<T extends string>({
   );
 }
 
-// --- Re-auth modal for "Reveal once" ---
-function ReAuthModal({ open, onClose, onConfirm }: { open: boolean; onClose: () => void; onConfirm: () => void }) {
+function ReAuthModal({
+  open,
+  onClose,
+  onConfirm,
+  revealedKey,
+  timeRemaining
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (pwd: string) => void;
+  revealedKey?: string;
+  timeRemaining?: number;
+}) {
   const [pwd, setPwd] = useState('');
+
   if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-40">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
       <div className="absolute left-1/2 top-1/2 w-[90%] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
         <div className="mb-3 flex items-center gap-2">
           <Shield className="h-5 w-5 text-slate-700" />
-          <h3 className="text-sm font-semibold text-slate-800">Re-authentication required</h3>
+          <h3 className="text-sm font-semibold text-slate-800">
+            {revealedKey ? 'API Key Revealed' : 'Re-authentication required'}
+          </h3>
         </div>
-        <p className="text-sm text-slate-600">Enter your password to reveal the key once (visible for 30 seconds).</p>
-        <input
-          type="password"
-          className="mt-3 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-          placeholder="Your password"
-          value={pwd}
-          onChange={(e) => setPwd(e.target.value)}
-        />
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">Cancel</button>
-          <button
-            onClick={() => { if (pwd.trim()) onConfirm(); }}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-          >
-            Confirm
-          </button>
-        </div>
+
+        {!revealedKey ? (
+          <>
+            <p className="text-sm text-slate-600">
+              Enter your password to reveal the key once (visible for 30 seconds).
+            </p>
+            <input
+              type="password"
+              className="mt-3 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Your password"
+              value={pwd}
+              onChange={(e) => setPwd(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && pwd.trim()) {
+                  onConfirm(pwd);
+                }
+              }}
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={onClose}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { if (pwd.trim()) onConfirm(pwd); }}
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              >
+                Confirm
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs text-slate-500">
+                Expires in {timeRemaining}s
+              </p>
+              <Badge tone="emerald">Visible</Badge>
+            </div>
+
+            <div className="rounded-lg bg-slate-50 p-3 font-mono text-sm break-all">
+              {revealedKey}
+            </div>
+
+            <button
+              onClick={onClose}
+              className="mt-4 w-full rounded-xl bg-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-500"
+            >
+              Close
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -202,27 +210,74 @@ function BottomSheet({
   );
 }
 
+// --- Loading Spinner ---
+function LoadingSpinner() {
+  return (
+    <div className="flex items-center justify-center py-16">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600"></div>
+    </div>
+  );
+}
+
 // --- Main Page ---
 export default function Credentials(): JSX.Element {
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
-  const [rows, setRows] = useState<Credential[]>([]);
-  useEffect(() => setRows(MOCK), []);
+  // Fetch on mount (idempotent if thunk handles in-flight)
+  useEffect(() => {
+    dispatch(fetchCredentialsAsync());
+  }, [dispatch]);
 
-  // Toolbar state
+  // Redux state (paginated payload)
+  const { items: paged, isLoading, error } = useAppSelector((s) => s.credential);
+  // IMPORTANT: your slice shape is { items: { items: CredentialModel[], page, ... } }
+  const sourceItems: CredentialModel[] = useMemo(
+    () => (paged?.items ?? []) as CredentialModel[],
+    [paged]
+  );
+
+  // Normalize backend -> UI model (fixes apiKeyFingerprint vs fingerprint etc.)
+  const rows: Credential[] = useMemo(
+    () =>
+      sourceItems.map((c) => ({
+        id: c.id,
+        exchange: c.exchange as Exchange,
+        label: c.label,
+        apiKeyLast4: (c as any).apiKeyLast4 ?? (c as any).apiKeyLast4Digits ?? '????',
+        fingerprint: (c as any).apiKeyFingerprint ?? (c as any).fingerprint ?? '—',
+        ownerEmail: (c as any).ownerEmail,
+        ownerUsername: (c as any).ownerUsername,
+        status: (c.status as Status) ?? 'active',
+        createdAt: c.createdAt,
+        lastUsedAt: (c as any).lastUsedAt,
+        notes: (c as any).notes,
+        connections: (c as any).connections,
+        audit: (c as any).audit,
+      })),
+    [sourceItems]
+  );
+
+  // Toolbar/UI state
   const [q, setQ] = useState('');
+  const qDeferred = useDeferredValue(q);
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [age, setAge] = useState<'any' | 'gt30' | 'gt90'>('any');
   const [sortBy, setSortBy] = useState<'created' | 'lastUsed'>('created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [fullKeyCache, setFullKeyCache] = useState<Record<string, string>>({});
 
   // Selection + UI
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [copied, setCopied] = useState<Record<string, string | undefined>>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const selectedIds = Object.entries(selected).filter(([, v]) => v).map(([k]) => k);
+  const selectedIds = useMemo(
+    () => Object.entries(selected).filter(([, v]) => v).map(([k]) => k),
+    [selected]
+  );
 
-  // Reveal once (store expiry timestamps)
+  // Reveal once timer store
   const [reauthOpen, setReauthOpen] = useState(false);
   const revealTarget = useRef<string | null>(null);
   const [revealedUntil, setRevealedUntil] = useState<Record<string, number>>({});
@@ -231,17 +286,54 @@ export default function Credentials(): JSX.Element {
       setRevealedUntil(prev => {
         const now = Date.now();
         const next = { ...prev };
-        Object.keys(next).forEach(k => { if (next[k] < now) delete next[k]; });
+        for (const k of Object.keys(next)) if (next[k] < now) delete next[k];
         return next;
       });
     }, 1000);
     return () => clearInterval(id);
   }, []);
 
-  // Derived filtered/sorted data
+  const showCopied = useCallback((id: string, text: string) => {
+    setCopied(prev => ({ ...prev, [id]: text }));
+    setTimeout(() => {
+      setCopied(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }, 1500);
+  }, []);
+
+
+  const copyLast4 = useCallback(async (id: string, last4: string) => {
+    try {
+      await navigator.clipboard.writeText(last4);
+      showCopied(id, `••••${last4}`);
+      Toast.fire({ icon: "success", title: `Copied last-4: ${last4}` });
+    } catch { }
+  }, [showCopied]);
+
+  const copyKey = useCallback(async (id: string, keyText: string) => {
+    try {
+      await navigator.clipboard.writeText(keyText);
+      showCopied(id, keyText);
+      Toast.fire({ icon: "success", title: `Copied key: ${keyText}` });
+    } catch { }
+  }, [showCopied]);
+
+  const copyText = useCallback(async (id: string, text: string, label = "Copied") => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showCopied(id, text);
+      Toast.fire({ icon: "success", title: `${label}: ${text}` });
+    } catch { }
+  }, [showCopied]);
+
+
+  // Derived list
   const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    let list = rows.filter(r => {
+    const query = qDeferred.trim().toLowerCase();
+    const list = rows.filter(r => {
       if (exchanges.length && !exchanges.includes(r.exchange)) return false;
       if (statuses.length && !statuses.includes(r.status)) return false;
       if (age === 'gt30' && daysBetween(r.lastUsedAt) <= 30) return false;
@@ -256,500 +348,572 @@ export default function Credentials(): JSX.Element {
         exName.includes(query)
       );
     });
-    list.sort((a, b) => {
+
+    const sorted = [...list].sort((a, b) => {
       const av = sortBy === 'created' ? a.createdAt : (a.lastUsedAt || '');
       const bv = sortBy === 'created' ? b.createdAt : (b.lastUsedAt || '');
       const cmp = new Date(av).getTime() - new Date(bv).getTime();
       return sortDir === 'asc' ? cmp : -cmp;
     });
-    return list;
-  }, [rows, q, exchanges, statuses, age, sortBy, sortDir]);
 
-  const unusedOver90 = useMemo(() => filtered.filter(r => daysBetween(r.lastUsedAt) > 90 && r.status === 'active').length, [filtered]);
+    return sorted;
+  }, [rows, qDeferred, exchanges, statuses, age, sortBy, sortDir]);
 
-  // Actions (stub -> connect to API)
-  const addCredential = () => router.push('/credentials/new');
-  const importCsv = () => alert('Import CSV not wired');
-  const copyLast4 = async (last4: string) => { try { await navigator.clipboard.writeText(last4); } catch { /* noop */ } };
-  const openRevealOnce = (id: string) => { revealTarget.current = id; setReauthOpen(true); };
-  const confirmReveal = () => {
-    if (revealTarget.current) {
-      setRevealedUntil(prev => ({ ...prev, [revealTarget.current as string]: Date.now() + 30_000 }));
+  const unusedOver90 = useMemo(
+    () => filtered.filter(r => daysBetween(r.lastUsedAt) > 90 && r.status === 'active').length,
+    [filtered]
+  );
+
+  // Actions
+  const [isActing, setIsActing] = useState(false);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null)
+
+  const addCredential = useCallback(() => router.push('/dashboard/pages/start'), [router]);
+  const importCsv = useCallback(() => alert('Import CSV not wired'), []);
+  // Update your openRevealOnce and confirmReveal functions
+  const openRevealOnce = useCallback((id: string) => {
+    revealTarget.current = id;
+    setReauthOpen(true);
+  }, []);
+
+
+
+
+  const confirmReveal = useCallback((password: string) => {
+    const id = revealTarget.current;
+    if (!id) return;
+
+ 
+
+    // Set the revealed key and timer
+    setRevealedKey(id); // You'll need to store the full key
+    setRevealedUntil(prev => ({ ...prev, [id]: Date.now() + 30000 }));
+
+    // Start countdown timer
+    const timer = setInterval(() => {
+      setRevealedUntil(prev => {
+        const remaining = prev[id] - Date.now();
+        if (remaining <= 0) {
+          clearInterval(timer);
+          setRevealedKey(null);
+          setReauthOpen(false);
+          return { ...prev, [id]: 0 };
+        }
+        return prev;
+      });
+    }, 1000);
+  }, []);
+
+
+  // Rotate a single credential
+  const rotate = useCallback(async (id: string) => {
+    setIsActing(true);
+    try {
+      await dispatch(rotateCredentialAsync(id)).unwrap();
+      // refresh list so status/lastUsed etc. update
+      await dispatch(fetchCredentialsAsync());
+    } catch (e) {
+      // errors are already toasted in thunk; keep silent here
+    } finally {
+      setIsActing(false);
     }
-    revealTarget.current = null;
-    setReauthOpen(false);
-  };
-  const rotate = (id: string) => alert(`Rotate ${id}`);
-  const revoke = (id: string | string[]) => {
+  }, [dispatch]);
+
+  // Revoke one or many credentials
+  const revoke = useCallback(async (id: string | string[]) => {
     const ids = Array.isArray(id) ? id : [id];
-    setRows(prev => prev.map(r => (ids.includes(r.id) ? { ...r, status: 'revoked' } : r)));
-  };
-  const remove = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
+    setIsActing(true);
+    try {
+      // optional optimistic unselect
+      setSelected(prev => {
+        const next = { ...prev };
+        ids.forEach(i => { if (next[i]) delete next[i]; });
+        return next;
+      });
 
-  // Mobile bottom sheet
+      await Promise.all(ids.map(i => dispatch(revokeCredentialAsync(i)).unwrap()));
+      await dispatch(fetchCredentialsAsync());
+    } catch (e) {
+      // thunks handle toast
+    } finally {
+      setIsActing(false);
+    }
+  }, [dispatch]);
+
+  // Permanently delete (only for already revoked in your UI)
+  const remove = useCallback(async (id: string) => {
+    setIsActing(true);
+    try {
+      await dispatch(deleteCredentialAsync(id)).unwrap();
+      await dispatch(fetchCredentialsAsync());
+    } catch (e) {
+      // thunks handle toast
+    } finally {
+      setIsActing(false);
+    }
+  }, [dispatch]);
+
   const [sheetFor, setSheetFor] = useState<Credential | null>(null);
-
-  // Table header selection helpers
-  const allSelected = filtered.length > 0 && filtered.every(r => !!selected[r.id]);
-  const someSelected = filtered.some(r => !!selected[r.id]);
+  const handleRetry = useCallback(() => { dispatch(fetchCredentialsAsync()); }, [dispatch]);
 
   return (
     <DashboardLayout>
-    <div className="flex-1 overflow-auto">
-      {/* Header */}
-      <div className="px-4 pt-6 pb-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Credential Vault</h1>
-            <p className="mt-1 text-sm text-slate-600">Securely manage your API keys and secrets.</p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={addCredential}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500"
-            >
-              <Plus className="h-4 w-4" /> New Credential
-            </button>
-            <button
-              onClick={importCsv}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              <UploadCloud className="h-4 w-4" /> Import CSV
-            </button>
+      <div className="flex-1 overflow-auto">
+        {/* Header */}
+        <div className="px-4 pt-6 pb-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">Credential Vault</h1>
+              <p className="mt-1 text-sm text-slate-600">Securely manage your API keys and secrets.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={addCredential} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">
+                <Plus className="h-4 w-4" /> New Credential
+              </button>
+              <button onClick={importCsv} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                <UploadCloud className="h-4 w-4" /> Import CSV
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Info banner */}
-      <div className="px-4 sm:px-6 lg:px-8">
-        <div className="mb-3 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <Shield className="mt-0.5 h-5 w-5 text-slate-600" />
-          <div className="text-sm text-slate-700">
-            Secrets are encrypted. We only show key fingerprints after creation.
-          </div>
-        </div>
-      </div>
-
-      {/* Safety banner */}
-      {unusedOver90 >= 3 && (
+        {/* Info banner */}
         <div className="px-4 sm:px-6 lg:px-8">
-          <div className="mb-3 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
-            <div className="flex-1 text-sm text-amber-800">
-              You have {unusedOver90} unused credentials (&gt; 90 days). Consider revoking them.
+          <div className="mb-3 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <Shield className="mt-0.5 h-5 w-5 text-slate-600" />
+            <div className="text-sm text-slate-700">
+              Secrets are encrypted. We only show key fingerprints after creation.
             </div>
-            <button
-              onClick={() => revoke(filtered.filter(r => daysBetween(r.lastUsedAt) > 90 && r.status === 'active').map(r => r.id))}
-              className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-            >
-              Revoke inactive
-            </button>
           </div>
         </div>
-      )}
 
-      {/* Toolbar */}
-      <div className="px-4 pb-3 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-1 flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1">
-              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by last-4, label, email, username…"
-                className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              />
+        {/* Safety banner */}
+        {unusedOver90 >= 3 && (
+          <div className="px-4 sm:px-6 lg:px-8">
+            <div className="mb-3 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
+              <div className="flex-1 text-sm text-amber-800">
+                You have {unusedOver90} unused credentials (&gt; 90 days). Consider revoking them.
+              </div>
+              <button
+                onClick={() => revoke(filtered.filter(r => daysBetween(r.lastUsedAt) > 90 && r.status === 'active').map(r => r.id))}
+                className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+              >
+                Revoke inactive
+              </button>
             </div>
+          </div>
+        )}
 
-            <div className="flex flex-wrap gap-2">
-              <MultiSelect
-                label="Exchange"
-                options={[
-                  { label: 'Binance', value: 'binance' },
-                  { label: 'Bybit', value: 'bybit' },
-                  { label: 'BingX', value: 'bingx' },
-                ]}
-                values={exchanges}
-                setValues={setExchanges}
-              />
-              <MultiSelect
-                label="Status"
-                options={[
-                  { label: 'Active', value: 'active' },
-                  { label: 'Revoked', value: 'revoked' },
-                ]}
-                values={statuses}
-                setValues={setStatuses}
-              />
-              {/* Age filter */}
-              <div className="relative">
-                <button
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                  onClick={() => setAge(prev => prev === 'any' ? 'gt30' : prev === 'gt30' ? 'gt90' : 'any')}
-                  type="button"
-                  title="Toggle age filter"
-                >
-                  Age: <span className="font-medium">
-                    {age === 'any' ? 'Any' : age === 'gt30' ? '> 30d' : '> 90d'}
-                  </span>
-                  <ChevronRight className="h-4 w-4 opacity-60" />
-                </button>
+        {/* Loading state */}
+        {isLoading ? (
+          <LoadingSpinner />
+        ) : (
+          <>
+            {/* Toolbar */}
+            <div className="px-4 pb-3 sm:px-6 lg:px-8">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-1 flex-col gap-3 sm:flex-row">
+                  <div className="relative flex-1">
+                    <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                      placeholder="Search by last-4, label, email, username…"
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <MultiSelect
+                      label="Exchange"
+                      options={[
+                        { label: 'Binance', value: 'binance' },
+                        { label: 'Bybit', value: 'bybit' },
+                        { label: 'BingX', value: 'bingx' },
+                      ]}
+                      values={exchanges}
+                      setValues={setExchanges}
+                    />
+                    <MultiSelect
+                      label="Status"
+                      options={[
+                        { label: 'Active', value: 'active' },
+                        { label: 'Revoked', value: 'revoked' },
+                      ]}
+                      values={statuses}
+                      setValues={setStatuses}
+                    />
+                    <div className="relative">
+                      <button
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                        onClick={() => setAge(prev => prev === 'any' ? 'gt30' : prev === 'gt30' ? 'gt90' : 'any')}
+                        type="button"
+                        title="Toggle age filter"
+                      >
+                        Age: <span className="font-medium">
+                          {age === 'any' ? 'Any' : age === 'gt30' ? '> 30d' : '> 90d'}
+                        </span>
+                        <ChevronRight className="h-4 w-4 opacity-60" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sort */}
+                <div className="flex items-center gap-2">
+                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <option value="created">Sort: Created</option>
+                    <option value="lastUsed">Sort: Last Used</option>
+                  </select>
+                  <select value={sortDir} onChange={(e) => setSortDir(e.target.value as any)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <option value="desc">Desc</option>
+                    <option value="asc">Asc</option>
+                  </select>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Sort */}
-          <div className="flex items-center gap-2">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-            >
-              <option value="created">Sort: Created</option>
-              <option value="lastUsed">Sort: Last Used</option>
-            </select>
-            <select
-              value={sortDir}
-              onChange={(e) => setSortDir(e.target.value as any)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-            >
-              <option value="desc">Desc</option>
-              <option value="asc">Asc</option>
-            </select>
-          </div>
-        </div>
-      </div>
+            {/* Bulk bar */}
+            {selectedIds.length > 0 && (
+              <div className="sticky top-0 z-10 border-y border-slate-200 bg-white/95 px-4 py-2 backdrop-blur sm:px-6 lg:px-8">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-slate-600">{selectedIds.length} selected</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => selectedIds.forEach(id => rotate(id))}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                    >
+                      <RotateCw className="h-4 w-4" /> Rotate
+                    </button>
+                    <button
+                      onClick={() => revoke(selectedIds)}
+                      className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100 inline-flex items-center gap-2"
+                    >
+                      <Trash2 className="h-4 w-4" /> Revoke
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
-      {/* Bulk bar */}
-      {selectedIds.length > 0 && (
-        <div className="sticky top-0 z-10 border-y border-slate-200 bg-white/95 px-4 py-2 backdrop-blur sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-600">{selectedIds.length} selected</div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => selectedIds.forEach(id => rotate(id))}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
-              >
-                <RotateCw className="h-4 w-4" /> Rotate
-              </button>
-              <button
-                onClick={() => revoke(selectedIds)}
-                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100 inline-flex items-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" /> Revoke
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Desktop table */}
-      <div className="px-4 pb-10 sm:px-6 lg:px-8">
-        <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white lg:block">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="w-10 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300"
-                    checked={filtered.length > 0 && filtered.every(r => selected[r.id])}
-                    onChange={(e) => {
-                      const on = e.target.checked;
-                      const next: Record<string, boolean> = { ...selected };
-                      filtered.forEach(r => (next[r.id] = on));
-                      setSelected(next);
-                    }}
-                  />
-                </th>
-                <th className="px-3 py-3 text-left">Exchange</th>
-                <th className="px-3 py-3 text-left">Label</th>
-                <th className="px-3 py-3 text-left">Key</th>
-                <th className="px-3 py-3 text-left">Owner</th>
-                <th className="px-3 py-3 text-left">Status</th>
-                <th className="px-3 py-3 text-left">Created</th>
-                <th className="px-3 py-3 text-left">Last Used</th>
-                <th className="px-3 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map(r => {
-                const revealActive = revealedUntil[r.id] && revealedUntil[r.id] > Date.now();
-                return (
-                  <React.Fragment key={r.id}>
-                    <tr className="hover:bg-slate-50">
-                      <td className="w-10 px-4 py-3 align-top">
+            {/* Desktop table */}
+            <div className="px-4 pb-10 sm:px-6 lg:px-8">
+              <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white lg:block">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="w-10 px-4 py-3">
                         <input
                           type="checkbox"
                           className="h-4 w-4 rounded border-slate-300"
+                          checked={filtered.length > 0 && filtered.every(r => selected[r.id])}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            const next: Record<string, boolean> = {};
+                            if (on) filtered.forEach(r => (next[r.id] = true));
+                            setSelected(next);
+                          }}
+                        />
+                      </th>
+                      <th className="px-3 py-3 text-left">Exchange</th>
+                      <th className="px-3 py-3 text-left">Label</th>
+                      <th className="px-3 py-3 text-left">Key</th>
+                      <th className="px-3 py-3 text-left">Owner</th>
+                      <th className="px-3 py-3 text-left">Status</th>
+                      <th className="px-3 py-3 text-left">Created</th>
+                      <th className="px-3 py-3 text-left">Last Used</th>
+                      <th className="px-3 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filtered.map(r => {
+                      const revealActive = revealedUntil[r.id] && revealedUntil[r.id] > Date.now();
+                      return (
+                        <React.Fragment key={r.id}>
+                          <tr className="hover:bg-slate-50">
+                            <td className="w-10 px-4 py-3 align-top">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300"
+                                checked={!!selected[r.id]}
+                                onChange={(e) => setSelected(prev => ({ ...prev, [r.id]: e.target.checked }))}
+                              />
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <div className="flex items-center gap-3">
+                                <div className="h-6 w-6 overflow-hidden rounded">
+                                  <Image src={EXCHANGE_META[r.exchange].logo} width={24} height={24} alt="" />
+                                </div>
+                                <span className="text-slate-800">{EXCHANGE_META[r.exchange].name}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 align-top">{r.label}</td>
+                            <td className="px-3 py-3 align-top">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-slate-800">
+                                  {revealActive ? `FULL-KEY-…-${r.apiKeyLast4}` : `••••-••••-••••-${r.apiKeyLast4}`}
+                                </span>
+                                <button
+                                  className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+                                  title="Copy last-4"
+                                  onClick={() => copyLast4(r.id, r.apiKeyLast4)}
+                                >
+                                  <Copy className="h-5 w-5" />
+                                </button>
+
+                                {!revealActive ? (
+                                  <button
+                                    className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
+                                    title="Reveal once"
+                                    onClick={() => openRevealOnce(r.apiKeyLast4)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </button>
+                                ) : (
+                                  <Badge tone="emerald">
+                                    Visible {Math.ceil((revealedUntil[r.id] - Date.now()) / 1000)}s
+                                  </Badge>
+                                )}
+
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              {(r.ownerEmail || r.ownerUsername) ? (
+                                <div className="space-y-0.5">
+                                  {r.ownerEmail && <div className="text-slate-800">{r.ownerEmail}</div>}
+                                  {r.ownerUsername && <div className="text-xs text-slate-500">@{r.ownerUsername}</div>}
+                                </div>
+                              ) : '—'}
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              {r.status === 'active' ? <Badge tone="emerald">Active</Badge> : <Badge tone="rose">Revoked</Badge>}
+                            </td>
+                            <td className="px-3 py-3 align-top">{new Date(r.createdAt).toLocaleDateString()}</td>
+                            <td className="px-3 py-3 align-top">{relativeTime(r.lastUsedAt)}</td>
+                            <td className="px-3 py-3 align-top">
+                              <div className="flex items-center justify-end gap-1">
+                                <button className="rounded-lg px-2 py-1.5 text-slate-600 hover:bg-slate-100" title="Rotate" onClick={() => rotate(r.id)}>
+                                  <RotateCw className="h-4 w-4" />
+                                </button>
+                                {r.status === 'active' ? (
+                                  <button className="rounded-lg px-2 py-1.5 text-rose-600 hover:bg-rose-50" title="Revoke" onClick={() => revoke(r.id)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                ) : (
+                                  <span className="px-2 py-1.5 text-xs text-slate-400">—</span>
+                                )}
+                                <button
+                                  className="rounded-lg px-2 py-1.5 text-slate-600 hover:bg-slate-100"
+                                  title="More"
+                                  onClick={() => setExpanded(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Expanded row */}
+                          {expanded[r.id] && (
+                            <tr className="bg-slate-50/70">
+                              <td colSpan={9} className="px-6 py-4">
+                                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                                  {/* Details */}
+                                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Details</div>
+                                    <div className="space-y-2 text-sm">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-slate-600">Fingerprint</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-mono text-slate-800">{r.fingerprint}</span>
+                                          <button className="rounded-lg p-1 hover:bg-slate-100" onClick={() => copyKey(r.id, r.fingerprint)} title="Copy fingerprint">
+                                            <Copy className="h-4 w-4 text-slate-600" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-slate-600">ID</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-mono text-slate-800">{r.id}</span>
+                                          <button className="rounded-lg p-1 hover:bg-slate-100" onClick={() => copyKey(r.id, r.id)} title="Copy ID">
+                                            <Copy className="h-4 w-4 text-slate-600" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-slate-600">Created</span>
+                                        <span className="text-slate-800">{new Date(r.createdAt).toLocaleString()}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-slate-600">Last Used</span>
+                                        <span className="text-slate-800">{r.lastUsedAt ? new Date(r.lastUsedAt).toLocaleString() : '—'}</span>
+                                      </div>
+                                      <div className="mt-3 flex gap-2">
+                                        <button onClick={() => rotate(r.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                                          <RotateCw className="h-4 w-4" /> Rotate
+                                        </button>
+                                        {r.status === 'active' ? (
+                                          <button onClick={() => revoke(r.id)} className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100">
+                                            <Trash2 className="h-4 w-4" /> Revoke
+                                          </button>
+                                        ) : (
+                                          <button onClick={() => remove(r.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                                            <Trash2 className="h-4 w-4" /> Remove
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Connections */}
+                                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Connections</div>
+                                    {r.connections && r.connections.length > 0 ? (
+                                      <ul className="space-y-2">
+                                        {r.connections.map(c => (
+                                          <li key={c.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
+                                            <div className="text-sm text-slate-800">{c.name}</div>
+                                            <Badge tone={c.status === 'connected' ? 'emerald' : 'slate'}>
+                                              {c.status === 'connected' ? 'Connected' : 'Paused'}
+                                            </Badge>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <div className="text-sm text-slate-500">No linked connections.</div>
+                                    )}
+                                  </div>
+
+
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile list */}
+              <div className="lg:hidden space-y-3">
+                {filtered.map(r => {
+                  const revealActive = revealedUntil[r.id] && revealedUntil[r.id] > Date.now();
+                  return (
+                    <div key={r.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 overflow-hidden rounded">
+                            <Image src={EXCHANGE_META[r.exchange].logo} width={32} height={32} alt="" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{r.label}</div>
+                            <div className="text-xs text-slate-500">{EXCHANGE_META[r.exchange].name}</div>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 mt-1"
                           checked={!!selected[r.id]}
                           onChange={(e) => setSelected(prev => ({ ...prev, [r.id]: e.target.checked }))}
                         />
-                      </td>
-                      <td className="px-3 py-3 align-top">
-                        <div className="flex items-center gap-3">
-                          <div className="h-6 w-6 overflow-hidden rounded">
-                            <Image src={EXCHANGE_META[r.exchange].logo} width={24} height={24} alt="" />
-                          </div>
-                          <span className="text-slate-800">{EXCHANGE_META[r.exchange].name}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 align-top">{r.label}</td>
-                      <td className="px-3 py-3 align-top">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-slate-800">
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                        <div className="rounded-lg border border-slate-100 p-2">
+                          <div className="text-xs text-slate-500">Key</div>
+                          <div className="mt-0.5 font-mono text-slate-800">
                             {revealActive ? `FULL-KEY-…-${r.apiKeyLast4}` : `••••-••••-••••-${r.apiKeyLast4}`}
-                          </span>
-                          <button
-                            className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
-                            title="Copy last-4"
-                            onClick={() => copyLast4(r.apiKeyLast4)}
-                          >
-                            <Copy className="h-4 w-4" />
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-100 p-2">
+                          <div className="text-xs text-slate-500">Owner</div>
+                          <div className="mt-0.5 text-slate-800">{r.ownerEmail || r.ownerUsername || '—'}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-100 p-2">
+                          <div className="text-xs text-slate-500">Created</div>
+                          <div className="mt-0.5 text-slate-800">{new Date(r.createdAt).toLocaleDateString()}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-100 p-2">
+                          <div className="text-xs text-slate-500">Last Used</div>
+                          <div className="mt-0.5 text-slate-800">{relativeTime(r.lastUsedAt)}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between">
+                        <div>
+                          {r.status === 'active' ? <Badge tone="emerald">Active</Badge> : <Badge tone="rose">Revoked</Badge>}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Copy last-4" onClick={() => copyKey(r.id, r.apiKeyLast4)}>
+                            <Copy className="h-5 w-5" />
                           </button>
                           {!revealActive ? (
-                            <button
-                              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
-                              title="Reveal once"
-                              onClick={() => openRevealOnce(r.id)}
-                            >
-                              <Eye className="h-4 w-4" />
+                            <button className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Reveal once" onClick={() => openRevealOnce(r.apiKeyLast4)}>
+                              <Eye className="h-5 w-5" />
                             </button>
                           ) : (
                             <Badge tone="emerald">Visible {Math.ceil((revealedUntil[r.id] - Date.now()) / 1000)}s</Badge>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 align-top">
-                        {(r.ownerEmail || r.ownerUsername) ? (
-                          <div className="space-y-0.5">
-                            {r.ownerEmail && <div className="text-slate-800">{r.ownerEmail}</div>}
-                            {r.ownerUsername && <div className="text-xs text-slate-500">@{r.ownerUsername}</div>}
-                          </div>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-3 align-top">
-                        {r.status === 'active' ? <Badge tone="emerald">Active</Badge> : <Badge tone="rose">Revoked</Badge>}
-                      </td>
-                      <td className="px-3 py-3 align-top">{new Date(r.createdAt).toLocaleDateString()}</td>
-                      <td className="px-3 py-3 align-top">{relativeTime(r.lastUsedAt)}</td>
-                      <td className="px-3 py-3 align-top">
-                        <div className="flex items-center justify-end gap-1">
-                          <button className="rounded-lg px-2 py-1.5 text-slate-600 hover:bg-slate-100" title="Rotate" onClick={() => rotate(r.id)}>
-                            <RotateCw className="h-4 w-4" />
-                          </button>
-                          {r.status === 'active' ? (
-                            <button className="rounded-lg px-2 py-1.5 text-rose-600 hover:bg-rose-50" title="Revoke" onClick={() => revoke(r.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          ) : (
-                            <span className="text-xs text-slate-400 px-2 py-1.5">—</span>
-                          )}
-                          <button
-                            className="rounded-lg px-2 py-1.5 text-slate-600 hover:bg-slate-100"
-                            title="More"
-                            onClick={() => setExpanded(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
+                          <button className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Actions" onClick={() => setSheetFor(r)}>
+                            <MoreHorizontal className="h-5 w-5" />
                           </button>
                         </div>
-                      </td>
-                    </tr>
-
-                    {/* Row drawer */}
-                    {expanded[r.id] && (
-                      <tr className="bg-slate-50/60">
-                        <td />
-                        <td colSpan={8} className="px-3 py-3">
-                          <div className="grid gap-4 lg:grid-cols-4 sm:grid-cols-2">
-                            <div>
-                              <div className="text-xs text-slate-500">Fingerprint</div>
-                              <div className="font-mono text-sm font-medium text-slate-800">{r.fingerprint}</div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-slate-500">Notes</div>
-                              <div className="text-sm text-slate-800">{r.notes ?? '—'}</div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-slate-500">Connected connections</div>
-                              <div className="text-sm text-slate-800">
-                                {r.connections?.length
-                                  ? r.connections.map(c => (
-                                      <div key={c.id} className="flex items-center gap-2">
-                                        <span className={cn('h-2 w-2 rounded-full', c.status === 'connected' ? 'bg-emerald-600' : 'bg-slate-400')} />
-                                        {c.name}
-                                      </div>
-                                    ))
-                                  : '—'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-slate-500">Audit trail</div>
-                              <div className="text-xs text-slate-700 space-y-1">
-                                {r.audit?.length
-                                  ? r.audit.map((a, i) => (
-                                      <div key={i} className="flex items-center gap-2">
-                                        <Check className="h-3.5 w-3.5 text-slate-500" />
-                                        <span>{new Date(a.at).toLocaleString()} — {a.event}</span>
-                                      </div>
-                                    ))
-                                  : '—'}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-
-              {/* Empty state */}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="py-16">
-                    <div className="flex flex-col items-center justify-center gap-3">
-                      <div className="h-16 w-16 rounded-2xl bg-indigo-50" />
-                      <div className="text-base font-semibold text-slate-800">No credentials yet</div>
-                      <div className="text-sm text-slate-600">Add your first credential to get started.</div>
-                      <button
-                        onClick={addCredential}
-                        className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-                      >
-                        <Plus className="h-4 w-4" /> Add Credential
-                      </button>
+                      </div>
                     </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile cards */}
-        <div className="space-y-3 lg:hidden">
-          {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-16">
-              <div className="h-16 w-16 rounded-2xl bg-indigo-50" />
-              <div className="text-base font-semibold text-slate-800">No credentials yet</div>
-              <div className="text-sm text-slate-600">Add your first credential to get started.</div>
-              <button
-                onClick={addCredential}
-                className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-              >
-                <Plus className="h-4 w-4" /> Add Credential
-              </button>
+                  );
+                })}
+              </div>
             </div>
-          ) : (
-            filtered.map(r => {
-              const revealActive = revealedUntil[r.id] && revealedUntil[r.id] > Date.now();
-              return (
-                <div key={r.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 overflow-hidden rounded">
-                        <Image src={EXCHANGE_META[r.exchange].logo} width={32} height={32} alt="" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-slate-900">{r.label}</div>
-                        <div className="text-xs text-slate-500">{EXCHANGE_META[r.exchange].name}</div>
-                      </div>
-                    </div>
-                    {r.status === 'active' ? <Badge tone="emerald">Active</Badge> : <Badge tone="rose">Revoked</Badge>}
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <div className="text-slate-500">Key</div>
-                      <div className="font-mono text-slate-800">
-                        {revealActive ? `FULL-KEY-…-${r.apiKeyLast4}` : `••••-••••-••••-${r.apiKeyLast4}`}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500">Last Used</div>
-                      <div className="text-slate-800">{relativeTime(r.lastUsedAt)}</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500">Owner</div>
-                      <div className="text-slate-800">{r.ownerEmail || r.ownerUsername || '—'}</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500">Fingerprint</div>
-                      <div className="font-mono text-slate-800">{r.fingerprint}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between">
-                    <button
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-                      onClick={() => setExpanded(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
-                    >
-                      Details
-                    </button>
-                    <button
-                      className="rounded-lg p-1.5 hover:bg-slate-100"
-                      onClick={() => setSheetFor(r)}
-                      aria-label="More"
-                    >
-                      <MoreHorizontal className="h-5 w-5 text-slate-600" />
-                    </button>
-                  </div>
-
-                  {expanded[r.id] && (
-                    <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs">
-                      <div className="mb-1 text-slate-500">Notes</div>
-                      <div className="text-slate-700">{r.notes ?? '—'}</div>
-                      <div className="mt-2 text-slate-500">Audit</div>
-                      <div className="text-slate-700">
-                        {r.audit?.map((a, i) => <div key={i}>{new Date(a.at).toLocaleString()} — {a.event}</div>) ?? '—'}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
+          </>
+        )}
       </div>
 
-      {/* Mobile bottom sheet actions */}
-      <BottomSheet open={!!sheetFor} onClose={() => setSheetFor(null)} title="Credential Actions">
+      {/* Mobile actions sheet */}
+      <BottomSheet open={!!sheetFor} onClose={() => setSheetFor(null)} title={sheetFor ? `Actions · ${sheetFor.label}` : 'Actions'}>
         {sheetFor && (
           <div className="space-y-2">
-            <button
-              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              onClick={() => copyLast4(sheetFor.apiKeyLast4)}
-            >
-              Copy last-4 <Copy className="h-4 w-4" />
-            </button>
-            <button
-              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              onClick={() => { openRevealOnce(sheetFor.id); setSheetFor(null); }}
-            >
-              Reveal once <Eye className="h-4 w-4" />
-            </button>
-            <button
-              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              onClick={() => rotate(sheetFor.id)}
-            >
-              Rotate <RotateCw className="h-4 w-4" />
+            <button onClick={() => { rotate(sheetFor.id); setSheetFor(null); }} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800">
+              <span className="inline-flex items-center gap-2"><RotateCw className="h-4 w-4" /> Rotate key</span>
+              <ChevronRight className="h-4 w-4 text-slate-400" />
             </button>
             {sheetFor.status === 'active' ? (
-              <button
-                className="flex w-full items-center justify-between rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-                onClick={() => { revoke(sheetFor.id); setSheetFor(null); }}
-              >
-                Revoke <Trash2 className="h-4 w-4" />
+              <button onClick={() => { revoke(sheetFor.id); setSheetFor(null); }} className="flex w-full items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-left text-sm text-rose-700">
+                <span className="inline-flex items-center gap-2"><Trash2 className="h-4 w-4" /> Revoke</span>
+                <ChevronRight className="h-4 w-4 text-rose-400" />
               </button>
-            ) : null}
+            ) : (
+              <button onClick={() => { remove(sheetFor.id); setSheetFor(null); }} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800">
+                <span className="inline-flex items-center gap-2"><Trash2 className="h-4 w-4" /> Remove</span>
+                <ChevronRight className="h-4 w-4 text-slate-400" />
+              </button>
+            )}
+            <button onClick={() => { openRevealOnce(sheetFor.apiKeyLast4); setSheetFor(null); }} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800">
+              <span className="inline-flex items-center gap-2"><Eye className="h-4 w-4" /> Reveal once</span>
+              <ChevronRight className="h-4 w-4 text-slate-400" />
+            </button>
+            <button onClick={() => { copyLast4(sheetFor.id, sheetFor.apiKeyLast4); setSheetFor(null); }} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800">
+              <span className="inline-flex items-center gap-2"><Copy className="h-4 w-4" /> Copy last-4</span>
+              <ChevronRight className="h-4 w-4 text-slate-400" />
+            </button>
           </div>
         )}
       </BottomSheet>
 
-      {/* Re-auth modal */}
-      <ReAuthModal open={reauthOpen} onClose={() => setReauthOpen(false)} onConfirm={confirmReveal} />
-    </div>
+      {/* Re-auth Modal */}
+      <ReAuthModal
+        open={reauthOpen}
+        onClose={() => {
+          revealTarget.current = null;
+          setRevealedKey(null);
+          setReauthOpen(false);
+        }}
+        onConfirm={confirmReveal}
+        revealedKey={revealedKey}
+        timeRemaining={revealTarget.current ? Math.ceil((revealedUntil[revealTarget.current] - Date.now()) / 1000) : undefined}
+      />
     </DashboardLayout>
   );
 }

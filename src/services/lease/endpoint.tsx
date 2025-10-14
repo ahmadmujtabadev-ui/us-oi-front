@@ -1,35 +1,66 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { HttpService } from "../index";
 
-class LeaseBaseService extends HttpService {
-  private readonly prefix: string = "dashboard";
+class ConnectionBaseService extends HttpService {
+  private readonly prefix: string = "api/v1/connections";
 
   /**
-   * Lease
-   * @paramdata
+   * List all connections with optional filters
    */
-  auth = (data: any): Promise<any> => this.get(this.prefix + ``, data);
-  submitLease = (data: any, option = {}): Promise<any> =>
-    this.post(this.prefix + `/upload_lease_tenant`, data, option);
-  userleasedetails = (): Promise<any> =>
-    this.get(`termination/lease_of_user_for_termination`, {})
-  terminatelease = (data: any, options = {}): Promise<any> =>
-    this.post(`/termination`, data, options);
-  // leaseBaseService.ts
-  getClauseDetails(leaseId: string, clauseDocId: string): Promise<any> {
-    return this.get(
-      `clause/read_single_clause/${encodeURIComponent(leaseId)}/${encodeURIComponent(clauseDocId)}`
-    );
-  }
-    getSingleLeaseDetail(leaseId: string): Promise<any> {
-      console.log("lease",leaseId)
-    return this.get(
-      `clause/get_lease/${leaseId}`
-    );
-  }
 
-  // `/get_single_loi/${id}`
+    listConnections = (): Promise<any> => this.get(this.prefix + `/`, {});
 
+  /**
+   * Create a new connection
+   */
+  createConnection = (data: {
+    credentialId: string;
+    label?: string;
+    scope: "read" | "trade";
+    account?: string;
+  }): Promise<any> => this.post(this.prefix, data);
+
+  /**
+   * Pause a connection
+   */
+  pauseConnection = (id: string): Promise<any> => 
+    this.post(`${this.prefix}/${id}/pause`, {});
+
+  /**
+   * Resume a connection
+   */
+  resumeConnection = (id: string): Promise<any> => 
+    this.post(`${this.prefix}/${id}/resume`, {});
+
+  /**
+   * Sync a connection immediately
+   */
+  syncConnection = (id: string): Promise<any> => 
+    this.post(`${this.prefix}/${id}/sync`, {});
+
+  /**
+   * Remove/delete a connection
+   */
+  removeConnection = (id: string): Promise<any> => 
+    this.delete(`${this.prefix}/${id}`, {});
+
+  /**
+   * Bulk pause connections
+   */
+  bulkPauseConnections = (ids: string[]): Promise<any> => 
+    this.post(`${this.prefix}/bulk/pause`, { ids });
+
+  /**
+   * Bulk resume connections
+   */
+  bulkResumeConnections = (ids: string[]): Promise<any> => 
+    this.post(`${this.prefix}/bulk/resume`, { ids });
+
+  /**
+   * Bulk remove connections
+   */
+  bulkRemoveConnections = (ids: string[]): Promise<any> => 
+    this.post(`${this.prefix}/bulk/remove`, { ids });
 }
 
-export const leaseBaseService = new LeaseBaseService();
+export const connectionService = new ConnectionBaseService();

@@ -1,48 +1,21 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import { loiBaseService } from "./enpoints";
-import type { LOIApiPayload } from "@/types/loi"; // adjust path accordingly
-import { HttpService } from "../index";
 import ls from "localstorage-slim";
+import { HttpService } from "../index"; 
 import Toast from "@/components/Toast";
+import { credentialService } from "./enpoints";
 
-export const submitLOIAsync = createAsyncThunk(
-  "/loi/submit",
-  async (data: LOIApiPayload, { rejectWithValue }) => {
-    try {
-      const token: string = `${ls.get("access_token", { decrypt: true })}`;
-      HttpService.setToken(token);
-      const response = await loiBaseService.submitLOI(data);
-
-      // Additional check for API-level errors
-      if (response.success === false && response.status === 400) {
-        return rejectWithValue(response.message);
-      }
-
-      return response.data;
-    } catch (error: any) {
-      // Handle different error scenarios
-      if (error.response?.data?.message) {
-        return rejectWithValue(error.response.data.message);
-      } else if (error.response?.message) {
-        return rejectWithValue(error.response.message);
-      } else if (error.message) {
-        return rejectWithValue(error.message);
-      } else {
-        return rejectWithValue('An unexpected error occurred while submitting LOI');
-      }
-    }
-  }
-);
-// in asyncThunk.ts or wherever you define thunks
-export const getDraftLOIsAsync = createAsyncThunk(
-  "loi/fetchDrafts",
-  async (_, { rejectWithValue }) => {
+export const saveLeasesAsync = createAsyncThunk(
+  "user/lease",
+  async (dto, { rejectWithValue }) => {
     try {
       const token = `${ls.get("access_token", { decrypt: true })}`;
-      HttpService.setToken(token);
-      const response = await loiBaseService.draftLOI(); // API call
-
+      console.log("async runnig"),
+        HttpService.setToken(token);
+      const response = await credentialService.save(dto); 
+       if (response?.success || response?.status === 200) {
+        Toast.fire({ icon: "success", title: response.message as string });
+      }
+      console.log("response", response)
       if (!response.success || response.status === 400) {
         return rejectWithValue(response.message);
       }
@@ -54,19 +27,46 @@ export const getDraftLOIsAsync = createAsyncThunk(
   }
 );
 
-// in asyncThunk.ts or wherever you define thunks
-export const getLOIDetailsById = createAsyncThunk(
-  "loi/fetchSingleDraft",
-  async (loiId: string, { rejectWithValue }) => {
+// in asyncThunk.ts
+export const fetchCredentialsAsync = createAsyncThunk(
+  "user/getlease",
+  async (_: void, { rejectWithValue }) => {
     try {
       const token = `${ls.get("access_token", { decrypt: true })}`;
       HttpService.setToken(token);
+      const response = await credentialService.getcrediential();
 
-      const response = await loiBaseService.singledraftLOI(loiId);
+      if (!response?.success && response?.status === 400) {
+        return rejectWithValue(response.message);
+      }
 
-      if (response.success || response.status === 200) {
+      // Normalize to paged shape even if API returns []:
+      const data = Array.isArray(response.data)
+        ? { items: response.data, page: 1, pageSize: response.data.length, total: response.data.length }
+        : response.data; // already a paged envelope
+
+      return data; // Paged<CredentialModel>
+    } catch (e: any) {
+      return rejectWithValue(e?.response?.data?.message || "Failed to fetch drafts");
+    }
+  }
+);
+
+
+/** ROTATE */
+export const rotateCredentialAsync = createAsyncThunk(
+  "user/rotateCredential",
+  async (id: string, { rejectWithValue }) => {
+    try {
+      const token = `${ls.get("access_token", { decrypt: true })}`;
+      console.log("async running");
+      HttpService.setToken(token);
+
+      const response = await credentialService.rotate(id);
+      if (response?.success || response?.status === 200) {
         Toast.fire({ icon: "success", title: response.message as string });
       }
+      console.log("response", response);
 
       if (!response.success || response.status === 400) {
         return rejectWithValue(response.message);
@@ -74,8 +74,65 @@ export const getLOIDetailsById = createAsyncThunk(
 
       return response.data;
     } catch (error: any) {
-      return rejectWithValue(error?.response);
+      return rejectWithValue(
+        error?.response?.data?.message || "Failed to rotate credential"
+      );
     }
   }
 );
 
+/** REVOKE */
+export const revokeCredentialAsync = createAsyncThunk(
+  "user/revokeCredential",
+  async (id: string, { rejectWithValue }) => {
+    try {
+      const token = `${ls.get("access_token", { decrypt: true })}`;
+      console.log("async running");
+      HttpService.setToken(token);
+
+      const response = await credentialService.revoke(id);
+      if (response?.success || response?.status === 200) {
+        Toast.fire({ icon: "success", title: response.message as string });
+      }
+      console.log("response", response);
+
+      if (!response.success || response.status === 400) {
+        return rejectWithValue(response.message);
+      }
+
+      return response.data;
+    } catch (error: any) {
+      return rejectWithValue(
+        error?.response?.data?.message || "Failed to revoke credential"
+      );
+    }
+  }
+);
+
+/** DELETE */
+export const deleteCredentialAsync = createAsyncThunk(
+  "user/deleteCredential",
+  async (id: string, { rejectWithValue }) => {
+    try {
+      const token = `${ls.get("access_token", { decrypt: true })}`;
+      console.log("async running");
+      HttpService.setToken(token);
+
+      const response = await credentialService.remove(id);
+      if (response?.success || response?.status === 200) {
+        Toast.fire({ icon: "success", title: response.message as string });
+      }
+      console.log("response", response);
+
+      if (!response.success || response.status === 400) {
+        return rejectWithValue(response.message);
+      }
+
+      return response.data;
+    } catch (error: any) {
+      return rejectWithValue(
+        error?.response?.data?.message || "Failed to delete credential"
+      );
+    }
+  }
+);

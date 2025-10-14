@@ -1,5 +1,4 @@
 
-// components/PublicRoute.tsx
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useSelector } from 'react-redux';
@@ -13,7 +12,6 @@ interface PublicRouteProps {
 
 export const PublicRoute: React.FC<PublicRouteProps> = ({ 
   children, 
-  redirectTo = '/dashboard' 
 }) => {
   const router = useRouter();
   const { profile } = useSelector(selectUser);
@@ -24,8 +22,6 @@ export const PublicRoute: React.FC<PublicRouteProps> = ({
       const token = ls.get('access_token', { decrypt: true });
       
       if (token && profile?.id) {
-        // User is authenticated, redirect to dashboard
-        router.replace(redirectTo);
         return;
       }
       
@@ -33,9 +29,8 @@ export const PublicRoute: React.FC<PublicRouteProps> = ({
     };
 
     checkAuth();
-  }, [profile, router, redirectTo]);
+  }, [profile, router]);
 
-  // Show loading spinner while checking
   if (isChecking) {
     return (
       <div className="flex items-center justify-center min-h-screen">

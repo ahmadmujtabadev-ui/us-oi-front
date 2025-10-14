@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import Toast from "@/components/Toast";
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import {
   userForgetRequestAsync,
   userResetPasswordAsync,
@@ -7,169 +6,194 @@ import {
   userSignUpAsync,
   userVerifyOTPAsync,
   socialSignInAsync,
+  BackendUser,
+  LoginResponse,
+  RegisterResponse,
+  GenericResponse,
 } from "@/services/auth/asyncThunk";
-import { createSlice } from "@reduxjs/toolkit";
 import ls from "localstorage-slim";
-import Router from "next/router";
+import Toast from "@/components/Toast";
+import type { RootState } from "@/redux/store";
+
+export interface UserState {
+  isLoading: boolean;
+  signUpSuccess: boolean;
+  resetSuccess: boolean;
+  emailSent: boolean;
+  authError: string;
+  otp: string;
+  profile: BackendUser | null;
+  accessToken?: string;
+  filters: Record<string, unknown>;
+  metaData: Record<string, unknown>;
+  newsAlerts: Record<string, unknown>;
+  bills: unknown[];
+  reports: unknown[];
+}
+
+const initialState: UserState = {
+  isLoading: false,
+  signUpSuccess: false,
+  resetSuccess: false,
+  emailSent: false,
+  authError: "",
+  otp: "",
+  profile: null,
+  accessToken: undefined,
+  filters: {},
+  metaData: {},
+  newsAlerts: {},
+  bills: [],
+  reports: [],
+};
 
 export const userSlice = createSlice({
   name: "user",
-  initialState: {
-    isLoading: false,
-    signUpSuccess: false,
-    resetSuccess: false,
-    emailSent: false,
-    loadMore: false,
-    authError: "",
-    otp: "",
-    filters: {},
-    profile: {},
-    metaData: {},
-    newsAlerts: {},
-    bills: [],
-    reports: [],
-  },
+  initialState,
   reducers: {
-    setProfile: (state: any, action: any) => {
+    setProfile: (state, action: PayloadAction<BackendUser | null>) => {
       state.profile = action.payload;
     },
-
-    setReset: (state: any, action: any) => {
+    setReset: (state, action: PayloadAction<boolean>) => {
       state.resetSuccess = action.payload;
     },
-
-    setEmail: (state: any, action: any) => {
+    setEmail: (state, action: PayloadAction<boolean>) => {
       state.emailSent = action.payload;
     },
-
-    setSignUp: (state: any, action: any) => {
+    setSignUp: (state, action: PayloadAction<boolean>) => {
       state.signUpSuccess = action.payload;
     },
-
-    setOTP: (state: any, action: any) => {
+    setOTP: (state, action: PayloadAction<string>) => {
       state.otp = action.payload;
     },
-
-    setError: (state: any, action: any) => {
-      state.userError = action.payload;
+    setError: (state, action: PayloadAction<string>) => {
+      state.authError = action.payload;
     },
-
-    userLogout: (state: any) => {
-      state.profile = {};
+    userLogout: (state) => {
+      state.profile = null;
+      state.accessToken = undefined;
       ls.remove("access_token");
-      window.location.href = "/auth/login";
+      if (typeof window !== "undefined") window.location.href = "/auth/login";
     },
-
-    setLoading: (state: any, action: any) => {
+    setLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
     },
-    setMetaData: (state: any, action: any) => {
+    setMetaData: (state, action: PayloadAction<Record<string, unknown>>) => {
       state.metaData = action.payload;
     },
-
-    setAlertsFilters: (state: any, action: any) => {
+    setAlertsFilters: (state, action: PayloadAction<Record<string, unknown>>) => {
       state.filters = action.payload;
     },
-
-    setLoadMore: (state: any, action: any) => {
-      state.loadMore = action.payload;
+    setLoadMore: (state, _action: PayloadAction<boolean>) => {
+      // kept for compatibility
     },
   },
   extraReducers: (builder) => {
+    // SIGN UP
     builder
-      .addCase(userSignUpAsync.pending, (state: any) => {
+      .addCase(userSignUpAsync.pending, (state) => {
         state.isLoading = true;
       })
-      .addCase(userSignUpAsync.fulfilled, (state: any, ) => {
+      .addCase(userSignUpAsync.fulfilled, (state, action: PayloadAction<RegisterResponse>) => {
         state.isLoading = false;
         state.signUpSuccess = true;
+        // optionally store token
+        if (action.payload.accessToken) {
+          state.accessToken = action.payload.accessToken;
+          ls.set("access_token", action.payload.accessToken, { encrypt: true });
+        }
+        state.profile = action.payload.user;
       })
-      .addCase(userSignUpAsync.rejected, (state: any, action: any) => {
+      .addCase(userSignUpAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.authError = action.payload;
-        Toast.fire({ icon: "error", title: action.payload });
-      })
-      .addCase(userSignInAsync.pending, (state: any) => {
+        state.authError = action.payload as string;
+        Toast.fire({ icon: "error", title: state.authError });
+      });
+
+    // LOGIN
+    builder
+      .addCase(userSignInAsync.pending, (state) => {
         state.isLoading = true;
       })
-      .addCase(userSignInAsync.fulfilled, (state: any, action: any) => {
+      .addCase(userSignInAsync.fulfilled, (state, action: PayloadAction<LoginResponse>) => {
         state.isLoading = false;
-        console.log("payload", action.payload)
-        ls?.set("access_token", action.payload.access_token, {
-          encrypt: true,
-        });
-        state.profile = action.payload.profile;
+        state.profile = action.payload.user;
+        state.accessToken = action.payload.accessToken;
+        ls.set("access_token", action.payload.accessToken, { encrypt: true });
       })
-      .addCase(userSignInAsync.rejected, (state: any, action: any) => {
+      .addCase(userSignInAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.authError = action.payload;
-        Toast.fire({ icon: "error", title: action.payload });
-      })
-      .addCase(socialSignInAsync.pending, (state: any) => {
+        state.authError = action.payload as string;
+        Toast.fire({ icon: "error", title: state.authError });
+      });
+
+    // SOCIAL
+    builder
+      .addCase(socialSignInAsync.pending, (state) => {
         state.isLoading = true;
       })
-      .addCase(socialSignInAsync.fulfilled, (state: any, action: any) => {
+      .addCase(socialSignInAsync.fulfilled, (state, action) => {
         state.isLoading = false;
-        ls?.set("access_token", action.payload.access_token, {
-          encrypt: true,
-        });
-        state.profile = action.payload.data.profile;
-        window.location.href = "/home";
+        const token = (action.payload?.accessToken ??
+          action.payload?.access_token) as string | undefined;
+        if (token) {
+          state.accessToken = token;
+          ls.set("access_token", token, { encrypt: true });
+        }
+        state.profile = (action.payload?.user ??
+          action.payload?.data?.profile ??
+          null) as BackendUser | null;
       })
-      .addCase(socialSignInAsync.rejected, (state: any, action: any) => {
+      .addCase(socialSignInAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.authError = action.payload;
-        Toast.fire({ icon: "error", title: action.payload });
-      })
-      .addCase(userForgetRequestAsync.pending, (state: any) => {
+        state.authError = action.payload as string;
+        Toast.fire({ icon: "error", title: state.authError });
+      });
+
+    // FORGOT
+    builder
+      .addCase(userForgetRequestAsync.pending, (state) => {
         state.isLoading = true;
       })
-      .addCase(userForgetRequestAsync.fulfilled, (state: any, action: any) => {
+      .addCase(userForgetRequestAsync.fulfilled, (state) => {
         state.isLoading = false;
         state.emailSent = true;
-        const obj = { email: action.payload.data?.email };
-        ls.set("request", obj, {
-          encrypt: true,
-        });
       })
-      .addCase(userForgetRequestAsync.rejected, (state: any, action: any) => {
+      .addCase(userForgetRequestAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.authError = action.payload;
-        Toast.fire({ icon: "error", title: action.payload });
-      })
-      .addCase(userVerifyOTPAsync.pending, (state: any) => {
+        state.authError = action.payload as string;
+        Toast.fire({ icon: "error", title: state.authError });
+      });
+
+    // VERIFY OTP
+    builder
+      .addCase(userVerifyOTPAsync.pending, (state) => {
         state.isLoading = true;
       })
-      .addCase(userVerifyOTPAsync.fulfilled, (state: any, action: any) => {
+      .addCase(userVerifyOTPAsync.fulfilled, (state, action: PayloadAction<GenericResponse>) => {
         state.isLoading = false;
         Toast.fire({ icon: "success", title: action.payload.message });
-        const obj: any = ls.get("request", {
-          decrypt: true,
-        });
-        obj["otp"] = state.otp;
-        ls.set("request", obj, {
-          encrypt: true,
-        });
-        Router.push("/reset-password");
       })
-      .addCase(userVerifyOTPAsync.rejected, (state: any, action: any) => {
+      .addCase(userVerifyOTPAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.authError = action.payload;
-        Toast.fire({ icon: "error", title: action.payload });
-      })
-      .addCase(userResetPasswordAsync.pending, (state: any) => {
+        state.authError = action.payload as string;
+        Toast.fire({ icon: "error", title: state.authError });
+      });
+
+    // RESET PASSWORD
+    builder
+      .addCase(userResetPasswordAsync.pending, (state) => {
         state.isLoading = true;
       })
-      .addCase(userResetPasswordAsync.fulfilled, (state: any) => {
+      .addCase(userResetPasswordAsync.fulfilled, (state) => {
         state.isLoading = false;
         state.otp = "";
-        ls.remove("request");
         state.resetSuccess = true;
       })
-      .addCase(userResetPasswordAsync.rejected, (state: any, action: any) => {
+      .addCase(userResetPasswordAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.authError = action.payload;
-        Toast.fire({ icon: "error", title: action.payload });
+        state.authError = action.payload as string;
+        Toast.fire({ icon: "error", title: state.authError });
       });
   },
 });
@@ -188,6 +212,6 @@ export const {
   setLoadMore,
 } = userSlice.actions;
 
-export const selectUser = (state: any) => state.user;
+export const selectUser = (state: RootState) => state.user;
 
 export default userSlice.reducer;
