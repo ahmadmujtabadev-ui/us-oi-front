@@ -58,67 +58,44 @@ export const connectionSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // ============================================
-    // FETCH CONNECTIONS
-    // ============================================
     builder
       .addCase(fetchConnectionsAsync.pending, (state) => {
         state.isLoading = true;
         state.error = "";
       })
-      .addCase(
-        fetchConnectionsAsync.fulfilled,
-        (
-          state,
-          action: PayloadAction<{
-            items: ConnectionModel[];
-            page: number;
-            limit: number;
-            total: number;
-          }>
-        ) => {
-          state.isLoading = false;
-          state.items = action.payload.items;
-          state.pagination = {
-            page: action.payload.page,
-            limit: action.payload.limit,
-            total: action.payload.total,
-          };
-        }
-      )
+      .addCase(fetchConnectionsAsync.fulfilled, (state, action: PayloadAction<ConnectionModel[]>) => {
+        state.isLoading = false;
+        state.items = action.payload;
+      })
       .addCase(fetchConnectionsAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = (action.payload as string) ?? "Failed to fetch connections";
-        Toast.fire({ icon: "error", title: state.error });
+        state.error = (action.payload as string) ?? "Failed to load credentials";
       });
 
-    // ============================================
-    // CREATE CONNECTION
-    // ============================================
     builder
       .addCase(createConnectionAsync.pending, (state) => {
         state.isLoading = true;
         state.error = "";
       })
-      .addCase(
-        createConnectionAsync.fulfilled,
-        (state, action: PayloadAction<ConnectionModel>) => {
-          state.isLoading = false;
-          state.lastCreated = action.payload;
-          state.items.unshift(action.payload);
-          state.pagination.total += 1;
-          Toast.fire({ icon: "success", title: "Connection created successfully" });
-        }
-      )
+      .addCase(createConnectionAsync.fulfilled, (state, action: PayloadAction<ConnectionModel | any>) => {
+        state.isLoading = false;
+        state.lastCreated = action.payload;
+
+        // Ensure we’re working with an array
+        const existing = Array.isArray(state.items)
+          ? state.items
+          : (state.items as any)?.items ?? [];
+
+        state.items = [action.payload, ...existing];  // safe prepend
+        state.pagination.total = (state.pagination.total ?? 0) + 1;
+      })
+
       .addCase(createConnectionAsync.rejected, (state, action) => {
         state.isLoading = false;
         state.error = (action.payload as string) ?? "Failed to create connection";
         Toast.fire({ icon: "error", title: state.error });
       });
 
-    // ============================================
-    // PAUSE CONNECTION
-    // ============================================
     builder
       .addCase(pauseConnectionAsync.pending, (state) => {
         state.isLoading = true;
@@ -141,9 +118,6 @@ export const connectionSlice = createSlice({
         Toast.fire({ icon: "error", title: state.error });
       });
 
-    // ============================================
-    // RESUME CONNECTION
-    // ============================================
     builder
       .addCase(resumeConnectionAsync.pending, (state) => {
         state.isLoading = true;
@@ -166,9 +140,6 @@ export const connectionSlice = createSlice({
         Toast.fire({ icon: "error", title: state.error });
       });
 
-    // ============================================
-    // SYNC CONNECTION
-    // ============================================
     builder
       .addCase(syncConnectionAsync.pending, (state) => {
         state.isLoading = true;
@@ -195,9 +166,6 @@ export const connectionSlice = createSlice({
         Toast.fire({ icon: "error", title: state.error });
       });
 
-    // ============================================
-    // REMOVE CONNECTION
-    // ============================================
     builder
       .addCase(removeConnectionAsync.pending, (state) => {
         state.isLoading = true;
@@ -218,9 +186,6 @@ export const connectionSlice = createSlice({
         Toast.fire({ icon: "error", title: state.error });
       });
 
-    // ============================================
-    // BULK PAUSE
-    // ============================================
     builder
       .addCase(bulkPauseConnectionsAsync.pending, (state) => {
         state.isLoading = true;
@@ -248,9 +213,6 @@ export const connectionSlice = createSlice({
         Toast.fire({ icon: "error", title: state.error });
       });
 
-    // ============================================
-    // BULK RESUME
-    // ============================================
     builder
       .addCase(bulkResumeConnectionsAsync.pending, (state) => {
         state.isLoading = true;
@@ -278,9 +240,6 @@ export const connectionSlice = createSlice({
         Toast.fire({ icon: "error", title: state.error });
       });
 
-    // ============================================
-    // BULK REMOVE
-    // ============================================
     builder
       .addCase(bulkRemoveConnectionsAsync.pending, (state) => {
         state.isLoading = true;
@@ -308,13 +267,7 @@ export const connectionSlice = createSlice({
   },
 });
 
-// ============================================
-// ACTIONS & SELECTORS
-// ============================================
-
-// export const { clearError, resetConnections } = connectionSlice.actions;
-
 
 export default connectionSlice.reducer;
 
-export const selectCredentials = (s: RootState) => s.lease ;
+export const selectCredentials = (s: RootState) => s.lease;

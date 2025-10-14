@@ -3,31 +3,62 @@
 // ====================
 
 import { createAsyncThunk } from "@reduxjs/toolkit";
+import ls from "localstorage-slim";
+import { HttpService } from "../index"; 
+import Toast from "@/components/Toast";
 import { connectionService } from "./endpoint";
+
 
 /**
  * Fetch all connections with optional filters
  */
+// export const fetchConnectionsAsync = createAsyncThunk(
+//   "connections/fetchAll",
+//   async (
+//     {
+
+//     },
+//     { rejectWithValue }
+//   ) => {
+//     try {
+//       const response = await connectionService.listConnections();
+//             console.log("response", response)
+
+//       return response.data;
+//     } catch (error: any) {
+//       return rejectWithValue(
+//         error?.response?.data?.message || "Failed to fetch connections"
+//       );
+//     }
+//   }
+// );
+
+// in asyncThunk.ts
 export const fetchConnectionsAsync = createAsyncThunk(
   "connections/fetchAll",
-  async (
-    {
-
-    },
-    { rejectWithValue }
-  ) => {
+  async (_: void, { rejectWithValue }) => {
     try {
+      const token = `${ls.get("access_token", { decrypt: true })}`;
+      HttpService.setToken(token);
       const response = await connectionService.listConnections();
-            console.log("response", response)
 
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(
-        error?.response?.data?.message || "Failed to fetch connections"
-      );
+      if (!response?.success && response?.status === 400) {
+        return rejectWithValue(response.message);
+      }
+
+      // Normalize to paged shape even if API returns []:
+      const data = Array.isArray(response.data)
+        ? { items: response.data, page: 1, pageSize: response.data.length, total: response.data.length }
+        : response.data; // already a paged envelope
+
+      return data; // Paged<CredentialModel>
+    } catch (e: any) {
+      return rejectWithValue(e?.response?.data?.message || "Failed to fetch drafts");
     }
   }
 );
+
+
 
 /**
  * Create a new connection
