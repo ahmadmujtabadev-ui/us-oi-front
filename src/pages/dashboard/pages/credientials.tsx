@@ -394,8 +394,8 @@ export default function Credentials(): JSX.Element {
   const revealTarget = useRef<string | null>(null);
   const [revealedUntil, setRevealedUntil] = useState<Record<string, number>>({});
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
-const [statusOverride, setStatusOverride] = useState<Record<string, Status>>({});
-console.log(statusOverride)
+  const [statusOverride, setStatusOverride] = useState<Record<string, Status>>({});
+  console.log(statusOverride)
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -492,30 +492,30 @@ console.log(statusOverride)
     [dispatch, refresh],
   );
 
- const revoke = useCallback(
-  async (id: string | string[]) => {
-    const ids = Array.isArray(id) ? id : [id];
-    try {
-      // optimistically set to revoked
-      setStatusOverride((prev) => {
-        const next = { ...prev };
-        ids.forEach((i) => (next[i] = 'revoked'));
-        return next;
-      });
+  const revoke = useCallback(
+    async (id: string | string[]) => {
+      const ids = Array.isArray(id) ? id : [id];
+      try {
+        // optimistically set to revoked
+        setStatusOverride((prev) => {
+          const next = { ...prev };
+          ids.forEach((i) => (next[i] = 'revoked'));
+          return next;
+        });
 
-      await Promise.all(ids.map((i) => dispatch(revokeCredentialAsync(i)).unwrap()));
-      // optional: await refresh(); // keep or remove
-    } catch {
-      // rollback on error
-      setStatusOverride((prev) => {
-        const next = { ...prev };
-        ids.forEach((i) => delete next[i]);
-        return next;
-      });
-    }
-  },
-  [dispatch /*, refresh*/],
-);
+        await Promise.all(ids.map((i) => dispatch(revokeCredentialAsync(i)).unwrap()));
+        // optional: await refresh(); // keep or remove
+      } catch {
+        // rollback on error
+        setStatusOverride((prev) => {
+          const next = { ...prev };
+          ids.forEach((i) => delete next[i]);
+          return next;
+        });
+      }
+    },
+    [dispatch /*, refresh*/],
+  );
 
   const remove = useCallback(
     async (id: string) => {
@@ -880,80 +880,54 @@ console.log(statusOverride)
                           {/* Expanded row */}
                           {expanded[r.id] && (
                             <tr className="bg-slate-50/70">
-                              <td colSpan={9} className="px-6 py-4">
-                                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                                  {/* Details */}
-                                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      Details
-                                    </div>
-                                    <div className="space-y-2 text-sm">
-                                      <KeyRow
-                                        label="Fingerprint"
-                                        value={r.fingerprint}
-                                        onCopy={() => void copyKey(r.id, r.fingerprint)}
-                                      />
-                                      <KeyRow
-                                        label="ID"
-                                        value={r.id}
-                                        onCopy={() => void copyKey(r.id, r.id)}
-                                      />
-                                      <SimpleRow
-                                        label="Created"
-                                        value={new Date(r.createdAt).toLocaleString()}
-                                      />
-                                   
-                                      <div className="mt-3 flex gap-2">
-                                        <button
-                                          onClick={() => void rotate(r.id)}
-                                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                                        >
-                                          <RotateCw className="h-4 w-4" /> Rotate
-                                        </button>
-                                        {r.status === 'active' ? (
-                                          <button
-                                            onClick={() => void revoke(r.id)}
-                                            className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100"
-                                          >
-                                            <Trash2 className="h-4 w-4" /> Revoke
-                                          </button>
-                                        ) : (
-                                          <button
-                                            onClick={() => void remove(r.id)}
-                                            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                                          >
-                                            <Trash2 className="h-4 w-4" /> Remove
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
+                              <td colSpan={9} className="px-4 py-4 md:px-6">
+                                <div className="rounded-xl border border-slate-200 bg-white p-4 md:p-6 w-full max-w-2xl mx-auto">
+                                  {/* Header */}
+                                  <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Details
+                                  </h3>
+
+                                  {/* Info Rows */}
+                                  <div className="space-y-3 text-sm">
+                                    {/* <KeyRow
+                                      label="Fingerprint"
+                                      value={r.fingerprint}
+                                      onCopy={() => void copyKey(r.id, r.fingerprint)}
+                                    /> */}
+                                    <KeyRow
+                                      label="ID"
+                                      value={r.id}
+                                      onCopy={() => void copyKey(r.id, r.id)}
+                                    />
+                                    <SimpleRow
+                                      label="Created"
+                                      value={new Date(r.createdAt).toLocaleString()}
+                                    />
                                   </div>
 
-                                  {/* Connections */}
-                                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      Connections
-                                    </div>
-                                    {r.connections && r.connections.length > 0 ? (
-                                      <ul className="space-y-2">
-                                        {r.connections.map((c) => (
-                                          <li
-                                            key={c.id}
-                                            className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2"
-                                          >
-                                            <div className="text-sm text-slate-800">
-                                              {c.name}
-                                            </div>
-                                            <Badge tone={c.status === 'connected' ? 'emerald' : 'slate'}>
-                                              {c.status === 'connected' ? 'Connected' : 'Paused'}
-                                            </Badge>
-                                          </li>
-                                        ))}
-                                      </ul>
+                                  {/* Action Buttons */}
+                                  <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                                    <button
+                                      onClick={() => void rotate(r.id)}
+                                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors w-full sm:w-auto"
+                                    >
+                                      <RotateCw className="h-4 w-4" /> Rotate
+                                    </button>
+
+                                    {r.status === 'active' ? (
+                                      <button
+                                        onClick={() => void revoke(r.id)}
+                                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 hover:bg-rose-100 transition-colors w-full sm:w-auto"
+                                      >
+                                        <Trash2 className="h-4 w-4" /> Revoke
+                                      </button>
                                     ) : (
-                                      <div className="text-sm text-slate-500">
-                                        No linked connections.
-                                      </div>
+                                      <button
+                                        onClick={() => void remove(r.id)}
+                                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors w-full sm:w-auto"
+                                      >
+                                        <Trash2 className="h-4 w-4" /> Remove
+                                      </button>
                                     )}
                                   </div>
                                 </div>
