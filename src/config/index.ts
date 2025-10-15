@@ -7,28 +7,28 @@ interface ConfigType {
 }
 
 const local: ConfigType = {
-  API_ENDPOINT: "https://conections-backend02.vercel.app",
+  API_ENDPOINT: "https://os-1-alpha.vercel.app",
   API_TIMEOUT: 10000,
   MAX_RETRIES: 3,
   DEBUG: true,
 };
 
 const dev: ConfigType = {
-  API_ENDPOINT: "https://conections-backend02.vercel.app",
+  API_ENDPOINT: "https://os-1-alpha.vercel.app",
   API_TIMEOUT: 15000,
   MAX_RETRIES: 2,
   DEBUG: true,
 };
 
 const stag: ConfigType = {
-  API_ENDPOINT: "https://conections-backend02.vercel.app", // Different from prod
+  API_ENDPOINT: "https://os-1-alpha.vercel.app", // Different from prod
   API_TIMEOUT: 20000,
   MAX_RETRIES: 2,
   DEBUG: false,
 };
 
 const prod: ConfigType = {
-  API_ENDPOINT: "https://conections-backend02.vercel.app", // Production URL
+  API_ENDPOINT: "https://os-1-alpha.vercel.app", // Production URL
   API_TIMEOUT: 30000,
   MAX_RETRIES: 1,
   DEBUG: false,
