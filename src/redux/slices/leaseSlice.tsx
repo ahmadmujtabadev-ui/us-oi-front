@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import Toast from "@/components/Toast";
-import { bulkPauseConnectionsAsync, bulkRemoveConnectionsAsync, bulkResumeConnectionsAsync, createConnectionAsync, fetchConnectionsAsync, pauseConnectionAsync, removeConnectionAsync, resumeConnectionAsync, syncConnectionAsync } from "@/services/lease/asyncThunk";
+import { bulkPauseConnectionsAsync, bulkRemoveConnectionsAsync, bulkResumeConnectionsAsync, createConnectionAsync, fetchConnectionsAsync, pauseConnectionAsync, removeConnectionAsync, resumeConnectionAsync, syncConnectionAsync } from "@/services/connection/asyncThunk";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { RootState } from "../store";
 const asArray = (v: any): ConnectionModel[] => (Array.isArray(v) ? v : v?.items ?? []);
@@ -99,10 +101,9 @@ export const connectionSlice = createSlice({
 
       .addCase(createConnectionAsync.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = (action.payload as string) ?? "Failed to create connection";
+        state.error = (action.payload as string) ?? "Active credential not found";
         Toast.fire({ icon: "error", title: state.error });
       });
-
 
     // PAUSE
     builder

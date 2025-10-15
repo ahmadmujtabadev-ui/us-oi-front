@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import ls from "localstorage-slim";
 import { HttpService } from "../index"; 
@@ -8,8 +10,7 @@ export const saveLeasesAsync = createAsyncThunk(
   "user/lease",
   async (dto, { rejectWithValue }) => {
     try {
-      const token = `${ls.get("access_token", { decrypt: true })}`;
-      console.log("async runnig"),
+      const token = `${ls.get("access_token", { decrypt: true })}`
         HttpService.setToken(token);
       const response = await credentialService.save(dto); 
        if (response?.success || response?.status === 200) {

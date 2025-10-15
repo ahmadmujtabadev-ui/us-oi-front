@@ -1,13 +1,9 @@
-// ====================
-// ASYNC THUNKS
-// ====================
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import ls from "localstorage-slim";
 import { HttpService } from "../index";
-import Toast from "@/components/Toast";
 import { connectionService } from "./endpoint";
-
 
 /**
  * Fetch all connections with optional filters
@@ -79,7 +75,7 @@ export const createConnectionAsync = createAsyncThunk(
       return response.data;
     } catch (error: any) {
       return rejectWithValue(
-        error?.response?.data?.message || "Failed to create connection"
+        error?.response?.data?.message || "Active credential not found"
       );
     }
   }

@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // ConnectionsPage.tsx  (trimmed to key changes)
 import React, { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { useDispatch, useSelector } from "react-redux";
 import { Pause, Play, RefreshCw, Trash2, Plus } from "lucide-react";
 import { DashboardLayout } from "@/components/layouts";
@@ -11,9 +12,9 @@ import {
   resumeConnectionAsync,
   syncConnectionAsync,
   removeConnectionAsync,
-} from "@/services/lease/asyncThunk";
+} from "@/services/connection/asyncThunk";
 import AddConnectionModal from "@/components/models/AddconnectionModel";
-import { Exchange } from "@/services/loi/enpoints";
+import { Exchange } from "@/services/credientials/enpoints";
 import { ConnectionModel } from "@/redux/slices/leaseSlice";
 
 
@@ -23,16 +24,16 @@ function timeAgo(iso?: string) {
   return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(-mins, "minute");
 }
 
-const EXCHANGE_META: Record<Exchange, { name: string; logo: string }> = {
-  binance: { name: "Binance", logo: "/exchanges/binance.svg" },
-  bybit: { name: "Bybit", logo: "/exchanges/bybit.svg" },
-  bingx: { name: "BingX", logo: "/exchanges/bingx.svg" },
+const EXCHANGE_META: Record<Exchange, { name: string }> = {
+  binance: { name: "Binance" },
+  bybit: { name: "Bybit" },
+  bingx: { name: "BingX"},
 };
 
 export default function ConnectionsPage() {
   const dispatch = useDispatch<AppDispatch>();
-  const isLoading = useSelector((s: RootState) => s.lease.isLoading); // if your reducer key is different, adjust
-  const raw = useSelector((s: RootState) => s.lease.items); // envelope or array
+  const isLoading = useSelector((s: RootState) => s.lease.isLoading); 
+  const raw = useSelector((s: RootState) => s.lease.items);
 
   console.log("itms", raw)
   const [q, setQ] = useState("");
@@ -88,7 +89,6 @@ const list = useMemo(
                 <tr key={r.id}>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-3">
-                      <Image src={EXCHANGE_META[r.exchange].logo} alt={EXCHANGE_META[r.exchange].name} width={20} height={20} />
                       {EXCHANGE_META[r.exchange].name}
                     </div>
                   </td>

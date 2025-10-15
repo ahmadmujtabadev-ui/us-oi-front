@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import { authBaseService, LoginDto, RegisterDto, ForgotPasswordDto } from "./endpoints";
 
@@ -22,8 +24,6 @@ export interface RegisterResponse {
   user: BackendUser;
   accessToken?: string;
 }
-
-export interface MeResponse extends BackendUser {}
 
 export interface GenericResponse {
   message: string;

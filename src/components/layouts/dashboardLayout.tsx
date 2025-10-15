@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import { selectUser, userLogout } from '../../redux/slices/userSlice';
+import {  useDispatch } from 'react-redux';
+import {  userLogout } from '../../redux/slices/userSlice';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
-import { Bell, ChevronDown } from 'lucide-react';
 import { ProtectedRoute } from '../layouts/protectedRoutes';
 import { LogoutModal } from '../models/logoutModel';
 
@@ -14,7 +13,6 @@ interface DashboardLayoutProps {
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const dispatch = useDispatch();
   const router = useRouter();
-  const { profile } = useSelector(selectUser);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const backgroundImage = '/logo.png';
@@ -35,12 +33,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const navigation = [
     { name: 'Dashboard', href: '/dashboard/pages/mainpage', icon: '/mage_dashboard-2.png', current: router.pathname === '/dashboard' },
     { name: 'Add Integration', href: '/dashboard/pages/start', icon: '/f7_doc-text.png', current: router.pathname === '/profile' },
-    { name: 'Connections', href: '/dashboard/pages/uploadLeaseform', icon: '/upload.png', current: router.pathname === '/news-alerts' },
-    { name: 'Credentials', href: '/dashboard/pages/credientials', icon: '/upload.png', current: router.pathname === '/news-alerts' },
+    { name: 'Connections', href: '/dashboard/pages/uploadLeaseform', icon: '/step.png', current: router.pathname === '/news-alerts' },
+    { name: 'Credentials', href: '/dashboard/pages/credientials', icon: '/step.png', current: router.pathname === '/news-alerts' },
   ];
 
   const userSetting = [
-    { name: 'Settings', href: '/dashboard/pages/setting', icon: '/img10.png', current: router.pathname === '/setting' },
     { name: 'Logout', href: '#', icon: '/img9.png', current: router.pathname === '/profile' },
   ];
 
@@ -171,27 +168,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                   </div>
                 </nav>
               </div>
-
-              {/* Mobile User Profile Section */}
-              <div className="flex-shrink-0 flex border-t border-gray-200 p-4">
-                <div className="flex items-center w-full">
-                  <div className="flex-shrink-0">
-                    <div className="h-8 w-8 bg-blue-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm font-medium">
-                        {profile?.name?.charAt(0) || profile?.email?.charAt(0) || 'U'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="ml-3 flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {profile?.name || profile?.email}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {profile?.role || 'User'}
-                    </p>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -217,31 +193,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 <h1 className="text-xl font-bold text-gray-900">
                   {navigation.find(item => item.current)?.name || 'Dashboard'}
                 </h1>
-
-                {/* Right - Notifications + User */}
-                <div className="flex items-center space-x-4">
-                  {/* Notification Icon with Red Dot */}
-                  <div className="relative">
-                    <button className="text-gray-500 hover:text-gray-700">
-                      <Bell className="w-5 h-5" />
-                    </button>
-                    <span className="absolute top-0 right-0 inline-flex items-center justify-center w-2 h-2 bg-red-500 rounded-full ring-2 ring-white"></span>
-                  </div>
-
-                  {/* User Avatar & Dropdown */}
-                  <div className="flex items-center space-x-2">
-                    <Image
-                      src="/avatar.png"
-                      alt="User Avatar"
-                      width={40}
-                      height={40}
-                    />
-                    <div className="text-sm text-gray-700 font-medium">
-                      {profile?.name || profile?.email || 'John Doe'}
-                    </div>
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                  </div>
-                </div>
               </div>
             </div>
           </div>

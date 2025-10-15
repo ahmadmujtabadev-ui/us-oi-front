@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // services/dashboard/asyncThunk.ts (Updated with better error handling)
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import { dashboardStatusService } from "./endpoint";
@@ -59,60 +60,3 @@ export const getDashboardStatsAsync = createAsyncThunk(
   }
 );
 
-export const getloiDataAsync = createAsyncThunk(
-  "dashboard/alllois",
-  async (_, { rejectWithValue }) => {
-    try {
-      const token = ls.get("access_token", { decrypt: true });
-
-      if (!token) {
-        return rejectWithValue("Authentication token not found");
-      }
-
-      const response = await dashboardStatusService.getloiData();
-
-      console.log("Dashboard all loi response:", response);
-
-       if (response?.success || response?.status === 200) {
-        Toast.fire({ icon: "success", title: response?.message as string });
-      }
-
-
-      if (!response) {
-        return rejectWithValue("No data received from server");
-      }
-
-      if (response.success === false) {
-        return rejectWithValue(response.message || "Request failed");
-      }
-
-      return response.data || response;
-    } catch (error: any) {
-      console.error("Dashboard LOI error:", error);
-
-      if (error.code === 'NETWORK_ERROR') {
-        return rejectWithValue("Network error. Please check your connection.");
-      }
-
-      if (error.status === 401) {
-        return rejectWithValue("Session expired. Please log in again.");
-      }
-
-      if (error.status === 403) {
-        return rejectWithValue("You don't have permission to access this resource.");
-      }
-
-      if (error.status === 404) {
-        return rejectWithValue("LOI data not found.");
-      }
-
-      if (error.status >= 500) {
-        return rejectWithValue("Server error. Please try again later.");
-      }
-
-      return rejectWithValue(
-        error.message || "Failed to fetch LOI data"
-      );
-    }
-  }
-);

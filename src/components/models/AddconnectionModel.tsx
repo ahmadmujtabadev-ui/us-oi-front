@@ -1,13 +1,14 @@
-// AddConnectionModal.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import React, { useEffect, useMemo, useState } from "react";
 import { X, Plus } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "@/redux/store";
 import { Scope } from "@/redux/slices/leaseSlice";
-import { fetchCredentialsAsync } from "@/services/loi/asyncThunk";
-import { Exchange } from "@/services/loi/enpoints";
-import { createConnectionAsync } from "@/services/lease/asyncThunk";
-
+import { fetchCredentialsAsync } from "@/services/credientials/asyncThunk";
+import { Exchange } from "@/services/credientials/enpoints";
+import { createConnectionAsync } from "@/services/connection/asyncThunk";
+import { CredentialModel } from "@/redux/slices/credientialSlice";
 
 type Props = {
   open: boolean;
@@ -15,20 +16,29 @@ type Props = {
   onCreated?: () => void;
 };
 
+type Paged<T> = { items: T[] };
+type ItemsOrPaged<T> = T[] | Paged<T>;
+
+function asArray<T>(val: ItemsOrPaged<T>): T[] {
+  return Array.isArray(val) ? val : (val?.items ?? []);
+}
+
 export default function AddConnectionModal({ open, onClose, onCreated }: Props) {
   const dispatch = useDispatch<AppDispatch>();
 
-  // load credentials when modal opens
-  const credState = useSelector((s: RootState) => s.credential); // you said credentials live in lease slice
-  console.log("credintial", credState)
-  const credentials = credState.items.items as any[];             // CredentialModel[]
-  const isLoading = credState.isLoading;
-
+  const { credentials, isLoading } = useSelector((s: RootState) => {
+    const cred = s.credential as { items: ItemsOrPaged<CredentialModel>; isLoading: boolean };
+    return {
+      credentials: asArray<CredentialModel>(cred.items),
+      isLoading: cred.isLoading,
+    };
+  });
   const [selectedCredId, setSelectedCredId] = useState<string>("");
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState<Scope>("read");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  console.log(error)
 
   useEffect(() => {
     if (open) {
@@ -45,7 +55,6 @@ export default function AddConnectionModal({ open, onClose, onCreated }: Props) 
     [credentials, selectedCredId]
   );
 
-  // Auto-fill a friendly label when user picks a credential (still editable)
   useEffect(() => {
     if (selectedCred) {
       const exName = (selectedCred.exchange || "").toString().toUpperCase().slice(0, 1) +
@@ -81,7 +90,7 @@ export default function AddConnectionModal({ open, onClose, onCreated }: Props) 
       onCreated?.();
       onClose();
     } catch (err: any) {
-      setError(err?.message || "Failed to create connection.");
+      setError(err?.message || "Active credential not found.");
     } finally {
       setSubmitting(false);
     }
@@ -110,7 +119,6 @@ export default function AddConnectionModal({ open, onClose, onCreated }: Props) 
               <option value="">Select a saved credential…</option>
               {credentials?.map((c: any) => (
                 <option key={c.id} value={c.id}>
-                  {/* show exchange + label + last4/fingerprint if you have it */}
                   {c.exchange?.toUpperCase()} · {c.label || c.email || c.username || c.id.slice(-6)}
                 </option>
               ))}
@@ -151,12 +159,6 @@ export default function AddConnectionModal({ open, onClose, onCreated }: Props) 
               disabled={submitting}
             />
           </label>
-
-          {error && (
-            <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-              {error}
-            </div>
-          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">

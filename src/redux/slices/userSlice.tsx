@@ -84,9 +84,6 @@ export const userSlice = createSlice({
     setAlertsFilters: (state, action: PayloadAction<Record<string, unknown>>) => {
       state.filters = action.payload;
     },
-    setLoadMore: (state, _action: PayloadAction<boolean>) => {
-      // kept for compatibility
-    },
   },
   extraReducers: (builder) => {
     // SIGN UP
@@ -209,7 +206,6 @@ export const {
   setOTP,
   setMetaData,
   setAlertsFilters,
-  setLoadMore,
 } = userSlice.actions;
 
 export const selectUser = (state: RootState) => state.user;

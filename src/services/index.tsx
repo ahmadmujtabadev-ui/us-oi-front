@@ -9,32 +9,6 @@ import axios, {
 import Config from "../config/index";
 import ls from "localstorage-slim";
 
-// Response interface for consistent API responses
-interface ApiResponse<T = any> {
-  success: boolean;
-  data: T;
-  message: string;
-  status: number;
-}
-
-// Custom error class instead of type intersection
-class CustomError extends Error {
-  status?: number;
-  code?: string;
-
-  constructor(message: string, status?: number, code?: string) {
-    super(message);
-    this.name = 'CustomError';
-    this.status = status;
-    this.code = code;
-    
-    // Maintains proper stack trace for where our error was thrown (only available on V8)
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, CustomError);
-    }
-  }
-}
-
 export class HttpService {
   private axiosInstance: AxiosInstance;
   private cancelTokenSources: Map<string, CancelTokenSource> = new Map();
@@ -54,23 +28,19 @@ export class HttpService {
   }
 
   private setupInterceptors(): void {
-    // Request interceptor
     this.axiosInstance.interceptors.request.use(
       (config) => {
-        // Add auth token to requests
         const token = ls.get("access_token", { decrypt: true });
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
 
-        // Add ngrok bypass header if using ngrok
         if (Config.API_ENDPOINT.includes('ngrok')) {
           config.headers['ngrok-skip-browser-warning'] = 'true';
         }
 
-        // Log request in development
         if (Config.DEBUG) {
-          console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, {
+          console.log(` ${config.method?.toUpperCase()} ${config.url}`, {
             data: config.data,
             params: config.params
           });
@@ -122,6 +92,7 @@ export class HttpService {
               // return this.axiosInstance(originalRequest);
             }
           } catch (refreshError) {
+            console.log(refreshError)
             // Refresh failed, redirect to login
             this.clearAuthData();
             // You might want to emit an event or call a callback here

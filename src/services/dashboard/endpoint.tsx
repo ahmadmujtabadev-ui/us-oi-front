@@ -2,7 +2,7 @@
 import { HttpService } from "../index";
 
 class DashboardBaseService extends HttpService {
-  private readonly prefix: string = "dashboard";
+  private readonly prefix: string = "/api/v1/connections";
 
   /**
    * Lease
@@ -10,10 +10,8 @@ class DashboardBaseService extends HttpService {
    */
   auth = (data: any): Promise<any> => this.get(this.prefix + ``, data);
    dashboardStats = (): Promise<any> =>
-      this.get(this.prefix + `/`, {})
+      this.get(this.prefix + `/stats`, {})
 
-    getloiData = (): Promise<any> =>
-      this.get(this.prefix + `/get_all_loi_for_lease_submittion`, {})
 }
 
 export const dashboardStatusService = new DashboardBaseService();

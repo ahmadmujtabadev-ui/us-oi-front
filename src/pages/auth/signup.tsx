@@ -32,7 +32,7 @@ import type { RegisterDto } from "@/services/auth/endpoints";
 import Toast from "@/components/Toast";
 import { AuthLayout } from "@/components/layouts";
 
-interface SignUpUserData {
+interface SignUpUserData extends Record<string, unknown> {
   firstName: string;
   lastName: string;
   email: string;
@@ -53,13 +53,13 @@ const SignUp = () => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [authError, setAuthError] = useState("");
+  const [authError] = useState("");
 
   const handleGoogleAuth = async () => {
     console.log("Google Auth clicked");
   };
 
-  /** Map Formik values -> backend DTO expected by /api/v1/users/register */
+  // Map Formik values -> backend DTO
   const toRegisterDto = (v: SignUpUserData): RegisterDto => ({
     email: v.email,
     password: v.password,
@@ -69,45 +69,70 @@ const SignUp = () => {
     phone: v.phone,
   });
 
-  const registerUser = async (userData: SignUpUserData) => {
+  // Single definition (✅ no redeclare)
+  const registerUser = async (userData: SignUpUserData): Promise<RegisterResponse> => {
     const dto = toRegisterDto(userData);
-    const result = await dispatch(userSignUpAsync(dto)).unwrap(); // RegisterResponse
+    const result = await dispatch(userSignUpAsync(dto)).unwrap();
     return result;
   };
 
-  const handleSuccess = (response: unknown, formikActions: FormikHelpers<SignUpUserData>) => {
+  const handleSuccess = (
+    response: unknown,
+    formikActions: FormikHelpers<SignUpUserData>
+  ) => {
     const res = response as RegisterResponse;
-
     Toast.fire({
       icon: "success",
       title: "Registration successful",
       text: `Welcome, ${res.user?.businessName || res.user?.email || "User"}!`,
     });
-
     formikActions.setSubmitting(false);
     formikActions.resetForm();
     router.push("/auth/login");
   };
 
-  const handleError = (error: unknown, formikActions: FormikHelpers<SignUpUserData>) => {
+  const handleError = (
+    error: unknown,
+    formikActions: FormikHelpers<SignUpUserData>
+  ) => {
     const msg =
-      (error && typeof error === "object" && "message" in error && (error as { message: string }).message) ||
+      (error &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof (error as { message: unknown }).message === "string" &&
+        (error as { message: string }).message) ||
       "Signup failed. Try again.";
+    console.error(msg);
     formikActions.setSubmitting(false);
   };
 
+  // Adapter so createFormSubmissionHandler gets (data: Partial<T>) => Promise<unknown>
+  const submitRegister = async (
+    data: Partial<SignUpUserData>
+  ): Promise<RegisterResponse> => {
+    // Yup schema ensures requireds; safe to assert
+    return registerUser(data as SignUpUserData);
+  };
+
   const handleSubmit = createFormSubmissionHandler<SignUpUserData>(
-    registerUser,
+    submitRegister,
     handleSuccess,
     handleError,
     { formatData: true, excludeFields: ["conditions"] }
   );
 
+  // Safely seed initial values without any
+  const base = (authInitialValues.signup ?? {}) as Partial<SignUpUserData>;
   const initialValues: SignUpUserData = {
-    ...(authInitialValues.signup as SignUpUserData),
-    role: (authInitialValues.signup as any)?.role ?? "tenant",
-    country: (authInitialValues.signup as any)?.country ?? "US",
-    phone: (authInitialValues.signup as any)?.phone ?? "",
+    firstName: base.firstName ?? "",
+    lastName: base.lastName ?? "",
+    email: base.email ?? "",
+    password: base.password ?? "",
+    confirmPassword: base.confirmPassword ?? "",
+    role: base.role ?? "tenant",
+    country: base.country ?? "US",
+    phone: base.phone ?? "",
+    conditions: typeof base.conditions === "boolean" ? base.conditions : false,
   };
 
   return (
@@ -135,7 +160,12 @@ const SignUp = () => {
                   <FormikInput label="Last Name" name="lastName" placeholder="Doe" />
                 </div>
 
-                <FormikInput label="Email Address" name="email" type="email" placeholder="you@example.com" />
+                <FormikInput
+                  label="Email Address"
+                  name="email"
+                  type="email"
+                  placeholder="you@example.com"
+                />
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <FormikSelect
@@ -181,7 +211,7 @@ const SignUp = () => {
 
           <div className="text-center mt-6 md:mt-8">
             <p className="text-gray-600 text-sm md:text-base">
-              Already have an account?{" "}
+              Already have an account{" "}
               <AuthLink onClick={() => router.push("/auth/login")}>Sign In</AuthLink>
             </p>
           </div>

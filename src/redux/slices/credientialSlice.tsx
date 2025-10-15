@@ -4,9 +4,14 @@ import {
   fetchCredentialsAsync,
   revokeCredentialAsync,
   rotateCredentialAsync,
-  saveLeasesAsync
-} from "@/services/loi/asyncThunk"; // ✅ fixepd path
+  saveLeasesAsync,
+} from "@/services/credientials/asyncThunk";
 import type { RootState } from "@/redux/store";
+
+type ItemsOrPaged =
+  | CredentialModel[]
+  | { items: CredentialModel[]; page?: number; total?: number };
+
 
 export interface CredentialModel {
   id: string;
@@ -20,20 +25,12 @@ export interface CredentialModel {
   ownerEmail?: string;
   ownerUsername?: string;
   notes?: string;
-  // Add any other fields specific to your lease/credential model
 }
 
 export interface CredentialState {
   isLoading: boolean;
   error: string;
-  items: CredentialModel[];
-  lastSaved?: CredentialModel;
-}
-
-export interface CredentialState {
-  isLoading: boolean;
-  error: string;
-  items: CredentialModel[];
+  items: CredentialModel[];   // <-- plain array
   lastSaved?: CredentialModel;
 }
 
@@ -44,8 +41,17 @@ const initialState: CredentialState = {
   lastSaved: undefined,
 };
 
+function updateOne(itemsOrPaged: ItemsOrPaged, id: string, patch: Partial<CredentialModel>) {
+  if (Array.isArray(itemsOrPaged)) {
+    const idx = itemsOrPaged.findIndex((x) => String(x.id) === String(id));
+    if (idx >= 0) itemsOrPaged[idx] = { ...itemsOrPaged[idx], ...patch };
+  } else if (itemsOrPaged?.items) {
+    const idx = itemsOrPaged.items.findIndex((x) => String(x.id) === String(id));
+    if (idx >= 0) itemsOrPaged.items[idx] = { ...itemsOrPaged.items[idx], ...patch };
+  }
+}
 export const credentialSlice = createSlice({
-  name: "credentials",
+  name: "credential",
   initialState,
   reducers: {},
   extraReducers: (builder) => {
@@ -73,46 +79,52 @@ export const credentialSlice = createSlice({
         state.isLoading = true;
         state.error = "";
       })
-      .addCase(fetchCredentialsAsync.fulfilled, (state, action: PayloadAction<CredentialModel[]>) => {
-        state.isLoading = false;
-        state.items = action.payload;
-      })
+      .addCase(
+        fetchCredentialsAsync.fulfilled,
+        (state, action: PayloadAction<CredentialModel[]>) => {
+          state.isLoading = false;
+          state.items = action.payload; // <-- assign array
+        }
+      )
       .addCase(fetchCredentialsAsync.rejected, (state, action) => {
         state.isLoading = false;
         state.error = (action.payload as string) ?? "Failed to load credentials";
       });
 
+    // ROTATE
     builder
-      .addCase(rotateCredentialAsync.fulfilled, (state, action: PayloadAction<{ id: string; rotatedAt?: string }>) => {
-        const id = action.payload.id;
-        const arr = state.items?.items ?? [];
-        const i = arr.findIndex(x => x.id === id);
-        if (i >= 0) {
-          // If your backend returns additional fields, merge them:
-          arr[i] = { ...arr[i], ...action.payload };
+      .addCase(
+        rotateCredentialAsync.fulfilled,
+        (state, action: PayloadAction<{ id: string; rotatedAt?: string }>) => {
+          const id = action.payload.id;
+          const arr = state.items; // <-- array, not `.items`
+          const i = arr.findIndex((x) => x.id === id);
+          if (i >= 0) {
+            arr[i] = { ...arr[i], ...action.payload };
+          }
+          Toast.fire({ icon: "success", title: "Credential rotated" });
         }
-        Toast.fire({ icon: "success", title: "Credential rotated" });
-      })
+      )
       .addCase(rotateCredentialAsync.rejected, (_state, action) => {
         Toast.fire({ icon: "error", title: (action.payload as string) ?? "Rotate failed" });
       });
+
+    // REVOKE
     builder
-      .addCase(revokeCredentialAsync.fulfilled, (state, action: PayloadAction<{ id: string; status: "revoked" }>) => {
-        const id = action.payload.id;
-        const arr = state.items?.items ?? [];
-        const i = arr.findIndex(x => x.id === id);
-        if (i >= 0) {
-          arr[i].status = "revoked" as CredentialModel["status"];
-        }
-        Toast.fire({ icon: "success", title: "Credential revoked" });
+        .addCase(revokeCredentialAsync.fulfilled, (state, action) => {
+        // your service returns { id, status: 'revoked' }
+        const { id } = action.payload as { id: string; status?: string };
+        updateOne(state.items, id, { status: 'revoked' as any });
       })
       .addCase(revokeCredentialAsync.rejected, (_state, action) => {
         Toast.fire({ icon: "error", title: (action.payload as string) ?? "Revoke failed" });
       });
-    // DELETE
 
+    // DELETE (add if you implement a delete thunk)
   },
 });
 
 export default credentialSlice.reducer;
+
+// Selector
 export const selectCredentials = (s: RootState) => s.credential as CredentialState;

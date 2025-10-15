@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+import React, {  useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
-import Image from 'next/image';
 import { DashboardLayout } from '@/components/layouts';
 import { ShieldCheck, Plug, Eye, EyeOff, ClipboardPaste, Info, ChevronRight } from 'lucide-react';
 import { useAppDispatch } from '@/hooks/hooks';
-import { saveLeasesAsync } from '@/services/loi/asyncThunk';
+import { saveLeasesAsync } from '@/services/credientials/asyncThunk';
 
 type Exchange = 'binance' | 'bybit' | 'bingx';
 
@@ -37,9 +38,7 @@ function SegmentedExchange({
                 : 'border-slate-200 hover:bg-slate-50',
             ].join(' ')}
           >
-            <div className="h-6 w-6 overflow-hidden rounded">
-              <Image src={x.logo} width={24} height={24} alt={`${x.name} logo`} />
-            </div>
+          
             <div className="flex-1">
               <div className="text-sm font-medium text-slate-900">{x.name}</div>
               <div className="text-xs text-slate-500">Spot / Futures supported</div>
@@ -145,7 +144,7 @@ export default function AddIntegrationPage() {
     setError(null);
 
     try {
-      const payload = {
+      const payload: any = {
         exchange: exchange!,
         apiKey: apiKey.trim(),
         apiSecret: apiSecret.trim(),
@@ -154,7 +153,7 @@ export default function AddIntegrationPage() {
         label: label.trim() || undefined,
       };
 
-     await dispatch(saveLeasesAsync(payload)).unwrap();
+     await dispatch(saveLeasesAsync(payload) as any).unwrap();
       
       // Success - redirect with success indicator
       router.push('/dashboard/pages/credientials');
