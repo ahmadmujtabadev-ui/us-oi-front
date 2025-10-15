@@ -395,6 +395,7 @@ export default function Credentials(): JSX.Element {
   const [revealedUntil, setRevealedUntil] = useState<Record<string, number>>({});
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
 const [statusOverride, setStatusOverride] = useState<Record<string, Status>>({});
+console.log(statusOverride)
 
   useEffect(() => {
     const id = setInterval(() => {
