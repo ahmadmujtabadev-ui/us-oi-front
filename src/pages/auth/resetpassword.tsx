@@ -64,7 +64,7 @@ const ResetPassword = () => {
 
 
   return (
-    <PageContainer backgroundImage='/Frame.png'>
+    <PageContainer>
       <div className="bg-white p-5">
         <h2 className="text-2xl font-semibold text-center mb-6 text-gray-800">
           Reset your password

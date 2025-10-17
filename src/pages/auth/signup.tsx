@@ -137,7 +137,7 @@ const SignUp = () => {
 
   return (
     <AuthLayout>
-      <PageContainer backgroundImage="/Frame.png">
+      <PageContainer >
         <Card>
           <AuthHeader title="Sign Up" />
           {authError && <Alert type="error" message={authError} className="mb-6" />}

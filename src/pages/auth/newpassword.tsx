@@ -33,7 +33,6 @@ const NewPassword = () => {
 
   return (
      <PageContainer
-            backgroundImage='/Frame.png'
           >
       <div className="bg-white shadow-2xl p-8 w-[473px] h-[361px]">
         <h2 className="text-2xl font-semibold text-center mb-6 text-gray-800">

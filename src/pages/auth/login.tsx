@@ -140,7 +140,6 @@ const Login = () => {
   return (
     <AuthLayout>
       <PageContainer
-        backgroundImage='/Frame.png'
       >
         <Card>
           <AuthHeader
