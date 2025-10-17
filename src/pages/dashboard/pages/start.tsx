@@ -324,7 +324,7 @@ export default function AddIntegrationPage() {
                     isValid && !isSubmitting ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-400 cursor-not-allowed',
                   ].join(' ')}
                 >
-                  {isSubmitting ? 'Connecting...' : 'Connect'}
+                  {isSubmitting ? 'Adding...' : 'Add'}
                 </button>
               </div>
             </div>

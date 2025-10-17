@@ -15,7 +15,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const backgroundImage = '/logo.png';
+  const backgroundImage = '/png-logos-1.png';
 
   const handleLogout = () => {
     setShowLogoutModal(true);
@@ -33,7 +33,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const navigation = [
     { name: 'Dashboard', href: '/dashboard/pages/mainpage', icon: '/mage_dashboard-2.png', current: router.pathname === '/dashboard' },
     { name: 'Add Integration', href: '/dashboard/pages/start', icon: '/f7_doc-text.png', current: router.pathname === '/profile' },
-    { name: 'Connections', href: '/dashboard/pages/uploadLeaseform', icon: '/step.png', current: router.pathname === '/news-alerts' },
+    { name: 'Trade History', href: '/dashboard/pages/uploadLeaseform', icon: '/step.png', current: router.pathname === '/news-alerts' },
     { name: 'Credentials', href: '/dashboard/pages/credientials', icon: '/step.png', current: router.pathname === '/news-alerts' },
   ];
 
@@ -57,8 +57,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             <Image
               alt="Logo"
               src={backgroundImage}
-              width={200}
+              width={100}
               height={100}
+            className='ml-16 justify-center'
             />
             <div className="mt-5 flex-grow flex flex-col">
               <nav className="flex-1 px-2 pb-4 space-y-1">
@@ -121,8 +122,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                   <Image
                     alt="Logo"
                     src={backgroundImage}
-                    width={150}
-                    height={75}
+                    width={75}
+                    height={95}
                   />
                 </div>
 
